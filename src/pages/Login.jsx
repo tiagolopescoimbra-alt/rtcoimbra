@@ -16,9 +16,8 @@ export default function Login() {
     if (error) {
       setError('Email ou senha incorretos.')
       setLoading(false)
-    } else {
-      window.location.href = '/'
     }
+    // No sucesso: fica "Entrando..." até App.jsx redirecionar
   }
 
   return (
