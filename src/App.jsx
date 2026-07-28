@@ -8,15 +8,17 @@ import CoordinatorDashboard from './pages/CoordinatorDashboard'
 import EntryForm from './pages/EntryForm'
 import EntryDetail from './pages/EntryDetail'
 
-function ProtectedRoute({ children, profile, profileLoading, allowedRole }) {
-  if (profileLoading) return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
-      <div style={{ textAlign: 'center', color: '#8a9bb5' }}>
-        <img src="/logo.png" alt="RT Coimbra" style={{ height: 60, marginBottom: 16, opacity: 0.7 }} />
-        <p>Carregando...</p>
-      </div>
+const LoadingScreen = () => (
+  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
+    <div style={{ textAlign: 'center', color: '#8a9bb5' }}>
+      <img src="/logo.png" alt="RT Coimbra" style={{ height: 60, marginBottom: 16, opacity: 0.7 }} />
+      <p>Carregando...</p>
     </div>
-  )
+  </div>
+)
+
+function ProtectedRoute({ children, profile, profileLoading, allowedRole }) {
+  if (profileLoading) return <LoadingScreen />
   if (!profile) return <Navigate to="/login" replace />
   if (allowedRole && profile.role !== allowedRole) {
     return <Navigate to={profile.role === 'coordenador' ? '/coordenador' : '/funcionario'} replace />
@@ -37,7 +39,7 @@ export default function App() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session)
       if (session) loadProfile(session.user.id)
-      else setProfile(null)
+      else { setProfile(null); setProfileLoading(false) }
     })
     return () => subscription.unsubscribe()
   }, [])
@@ -49,22 +51,15 @@ export default function App() {
     setProfileLoading(false)
   }
 
-  if (session === undefined) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
-        <div style={{ textAlign: 'center', color: '#8a9bb5' }}>
-          <img src="/logo.png" alt="RT Coimbra" style={{ height: 60, marginBottom: 16, opacity: 0.7 }} />
-          <p>Carregando...</p>
-        </div>
-      </div>
-    )
-  }
+  if (session === undefined || profileLoading) return <LoadingScreen />
+
+  const dashboardPath = profile?.role === 'coordenador' ? '/coordenador' : '/funcionario'
 
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/login" element={!session ? <Login /> : <Navigate to={profile?.role === 'coordenador' ? '/coordenador' : '/funcionario'} replace />} />
-        <Route path="/cadastro" element={!session ? <Register /> : <Navigate to={profile?.role === 'coordenador' ? '/coordenador' : '/funcionario'} replace />} />
+        <Route path="/login" element={!session ? <Login /> : <Navigate to={dashboardPath} replace />} />
+        <Route path="/cadastro" element={!session ? <Register /> : <Navigate to={dashboardPath} replace />} />
         <Route path="/funcionario" element={
           <ProtectedRoute profile={profile} profileLoading={profileLoading} allowedRole="funcionario">
             <EmployeeDashboard profile={profile} />
@@ -85,9 +80,8 @@ export default function App() {
             <CoordinatorDashboard profile={profile} />
           </ProtectedRoute>
         } />
-        <Route path="/" element={<Navigate to={session ? (profile?.role === 'coordenador' ? '/coordenador' : '/funcionario') : '/login'} replace />} />
+        <Route path="/" element={<Navigate to={session ? dashboardPath : '/login'} replace />} />
       </Routes>
     </BrowserRouter>
   )
 }
-
