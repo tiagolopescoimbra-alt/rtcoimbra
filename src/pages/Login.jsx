@@ -13,8 +13,12 @@ export default function Login() {
     setLoading(true)
     setError('')
     const { error } = await supabase.auth.signInWithPassword({ email, password: senha })
-    if (error) setError('Email ou senha incorretos.')
-    setLoading(false)
+    if (error) {
+      setError('Email ou senha incorretos.')
+      setLoading(false)
+    } else {
+      window.location.href = '/'
+    }
   }
 
   return (
@@ -27,12 +31,10 @@ export default function Login() {
       padding: 20
     }}>
       <div style={{ width: '100%', maxWidth: 400 }}>
-        {/* Logo */}
         <div style={{ textAlign: 'center', marginBottom: 32 }}>
           <img src="/logo.png" alt="RT Coimbra" style={{ height: 70, marginBottom: 8 }} />
         </div>
 
-        {/* Card */}
         <div style={{
           background: 'white',
           borderRadius: 14,
