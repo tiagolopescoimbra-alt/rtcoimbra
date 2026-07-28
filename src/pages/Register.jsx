@@ -45,8 +45,14 @@ export default function Register() {
       }
     })
 
-    if (error) setError(error.message)
-    else setSuccess(true)
+    if (error) {
+      setError(error.message)
+    } else {
+      // Sign out immediately so the trigger has time to create the profile
+      // User will log in normally after registration
+      await supabase.auth.signOut()
+      setSuccess(true)
+    }
     setLoading(false)
   }
 
@@ -57,7 +63,7 @@ export default function Register() {
           <div style={{ fontSize: '3rem', marginBottom: 12 }}>✅</div>
           <h2 style={{ color: '#1e2d6b', marginBottom: 8 }}>Cadastro realizado!</h2>
           <p style={{ color: '#8a9bb5', fontSize: '0.9rem', marginBottom: 20 }}>
-            Verifique seu email para confirmar o cadastro e depois faça login.
+            Conta criada com sucesso! Agora faça login para acessar o sistema.
           </p>
           <Link to="/login" className="btn btn-primary btn-full">Ir para o Login</Link>
         </div>
@@ -157,3 +163,4 @@ export default function Register() {
     </div>
   )
 }
+
