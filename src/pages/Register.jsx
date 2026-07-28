@@ -14,7 +14,6 @@ export default function Register() {
   const [success, setSuccess] = useState(false)
 
   useEffect(() => {
-    // Busca coordenadores disponíveis
     supabase.from('profiles').select('id, nome, email').eq('role', 'coordenador')
       .then(({ data }) => setCoordenadores(data || []))
   }, [])
@@ -31,7 +30,7 @@ export default function Register() {
     if (role === 'funcionario' && !form.coordenadorId) { setError('Selecione um coordenador.'); return }
 
     setLoading(true)
-    const { error } = await supabase.auth.signUp({
+    const { data: authData, error } = await supabase.auth.signUp({
       email: form.email,
       password: form.senha,
       options: {
@@ -48,8 +47,17 @@ export default function Register() {
     if (error) {
       setError(error.message)
     } else {
-      // Sign out immediately so the trigger has time to create the profile
-      // User will log in normally after registration
+      if (authData?.user) {
+        await supabase.from('profiles').upsert({
+          id: authData.user.id,
+          email: form.email,
+          nome: form.nome,
+          role,
+          numero_inspetor: role === 'funcionario' ? parseInt(form.numeroInspetor) || null : null,
+          sigla: role === 'funcionario' ? form.sigla.toUpperCase() : null,
+          coordenador_id: role === 'funcionario' ? form.coordenadorId || null : null,
+        })
+      }
       await supabase.auth.signOut()
       setSuccess(true)
     }
@@ -81,7 +89,6 @@ export default function Register() {
         <div style={{ background: 'white', borderRadius: 14, boxShadow: '0 4px 20px rgba(30,45,107,0.10)', padding: '32px 28px' }}>
           <h1 style={{ fontSize: '1.2rem', fontWeight: 700, color: '#1e2d6b', marginBottom: 20 }}>Criar Conta</h1>
 
-          {/* Tipo de conta */}
           <div style={{ display: 'flex', gap: 10, marginBottom: 22 }}>
             {['funcionario', 'coordenador'].map(r => (
               <button key={r} type="button" onClick={() => setRole(r)} style={{
@@ -103,12 +110,10 @@ export default function Register() {
               <label>Nome completo</label>
               <input name="nome" value={form.nome} onChange={handleChange} placeholder="Seu nome completo" required />
             </div>
-
             <div className="form-group">
               <label>Email</label>
               <input name="email" type="email" value={form.email} onChange={handleChange} placeholder="seu@email.com" required />
             </div>
-
             {role === 'funcionario' && (
               <div className="form-row">
                 <div className="form-group">
@@ -121,7 +126,6 @@ export default function Register() {
                 </div>
               </div>
             )}
-
             {role === 'funcionario' && (
               <div className="form-group">
                 <label>Coordenador *</label>
@@ -138,7 +142,6 @@ export default function Register() {
                 )}
               </div>
             )}
-
             <div className="form-row">
               <div className="form-group">
                 <label>Senha</label>
@@ -149,7 +152,6 @@ export default function Register() {
                 <input name="confirmarSenha" type="password" value={form.confirmarSenha} onChange={handleChange} placeholder="Repita a senha" required />
               </div>
             </div>
-
             <button type="submit" className="btn btn-primary btn-full" disabled={loading} style={{ marginTop: 8 }}>
               {loading ? 'Cadastrando...' : 'Criar Conta'}
             </button>
@@ -163,4 +165,3 @@ export default function Register() {
     </div>
   )
 }
-
