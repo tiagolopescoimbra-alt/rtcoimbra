@@ -33,16 +33,19 @@ export default function App() {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      console.log('[getSession]', session?.user?.id ?? 'null')
+      console.log('[getSession]', session ? session.user.id : 'null')
       setSession(session)
       if (session) loadProfile(session.user.id)
       else setProfileLoading(false)
     })
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      console.log('[onAuthStateChange]', _event, session?.user?.id ?? 'null')
+      console.log('[onAuthStateChange]', _event, session ? session.user.id : 'null')
       setSession(session)
       if (session) loadProfile(session.user.id)
-      else { setProfile(null); setProfileLoading(false) }
+      else {
+        setProfile(null)
+        setProfileLoading(false)
+      }
     })
     return () => subscription.unsubscribe()
   }, [])
@@ -65,7 +68,7 @@ export default function App() {
 
   if (session === undefined || profileLoading) return <LoadingScreen />
 
-  const dashboardPath = profile?.role === 'coordenador' ? '/coordenador' : '/funcionario'
+  const dashboardPath = profile && profile.role === 'coordenador' ? '/coordenador' : '/funcionario'
 
   return (
     <BrowserRouter>
@@ -92,4 +95,8 @@ export default function App() {
             <CoordinatorDashboard profile={profile} />
           </ProtectedRoute>
         } />
-        <Route path="/"
+        <Route path="/" element={<Navigate to={session ? dashboardPath : '/login'} replace />} />
+      </Routes>
+    </BrowserRouter>
+  )
+}
