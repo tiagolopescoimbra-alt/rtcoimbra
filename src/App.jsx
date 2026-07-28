@@ -33,11 +33,13 @@ export default function App() {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
+      console.log('[getSession]', session?.user?.id ?? 'null')
       setSession(session)
       if (session) loadProfile(session.user.id)
       else setProfileLoading(false)
     })
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      console.log('[onAuthStateChange]', _event, session?.user?.id ?? 'null')
       setSession(session)
       if (session) loadProfile(session.user.id)
       else { setProfile(null); setProfileLoading(false) }
@@ -46,9 +48,12 @@ export default function App() {
   }, [])
 
   async function loadProfile(userId) {
+    console.log('[loadProfile] buscando userId=', userId)
     setProfileLoading(true)
-    const { data } = await supabase.from('profiles').select('*').eq('id', userId).single()
+    const { data, error } = await supabase.from('profiles').select('*').eq('id', userId).single()
+    console.log('[loadProfile] data=', data, 'error=', error)
     if (!data) {
+      console.log('[loadProfile] sem perfil, fazendo signOut')
       await supabase.auth.signOut()
       setProfile(null)
       setProfileLoading(false)
@@ -87,8 +92,4 @@ export default function App() {
             <CoordinatorDashboard profile={profile} />
           </ProtectedRoute>
         } />
-        <Route path="/" element={<Navigate to={session ? dashboardPath : '/login'} replace />} />
-      </Routes>
-    </BrowserRouter>
-  )
-}
+        <Route path="/"
