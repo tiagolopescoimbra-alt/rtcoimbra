@@ -48,6 +48,12 @@ export default function App() {
   async function loadProfile(userId) {
     setProfileLoading(true)
     const { data } = await supabase.from('profiles').select('*').eq('id', userId).single()
+    if (!data) {
+      await supabase.auth.signOut()
+      setProfile(null)
+      setProfileLoading(false)
+      return
+    }
     setProfile(data)
     setProfileLoading(false)
   }
