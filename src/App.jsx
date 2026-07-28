@@ -8,7 +8,15 @@ import CoordinatorDashboard from './pages/CoordinatorDashboard'
 import EntryForm from './pages/EntryForm'
 import EntryDetail from './pages/EntryDetail'
 
-function ProtectedRoute({ children, profile, allowedRole }) {
+function ProtectedRoute({ children, profile, profileLoading, allowedRole }) {
+  if (profileLoading) return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
+      <div style={{ textAlign: 'center', color: '#8a9bb5' }}>
+        <img src="/logo.png" alt="RT Coimbra" style={{ height: 60, marginBottom: 16, opacity: 0.7 }} />
+        <p>Carregando...</p>
+      </div>
+    </div>
+  )
   if (!profile) return <Navigate to="/login" replace />
   if (allowedRole && profile.role !== allowedRole) {
     return <Navigate to={profile.role === 'coordenador' ? '/coordenador' : '/funcionario'} replace />
@@ -19,6 +27,7 @@ function ProtectedRoute({ children, profile, allowedRole }) {
 export default function App() {
   const [session, setSession] = useState(undefined)
   const [profile, setProfile] = useState(null)
+  const [profileLoading, setProfileLoading] = useState(false)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -34,8 +43,10 @@ export default function App() {
   }, [])
 
   async function loadProfile(userId) {
+    setProfileLoading(true)
     const { data } = await supabase.from('profiles').select('*').eq('id', userId).single()
     setProfile(data)
+    setProfileLoading(false)
   }
 
   if (session === undefined) {
@@ -55,22 +66,22 @@ export default function App() {
         <Route path="/login" element={!session ? <Login /> : <Navigate to={profile?.role === 'coordenador' ? '/coordenador' : '/funcionario'} replace />} />
         <Route path="/cadastro" element={!session ? <Register /> : <Navigate to={profile?.role === 'coordenador' ? '/coordenador' : '/funcionario'} replace />} />
         <Route path="/funcionario" element={
-          <ProtectedRoute profile={profile} allowedRole="funcionario">
+          <ProtectedRoute profile={profile} profileLoading={profileLoading} allowedRole="funcionario">
             <EmployeeDashboard profile={profile} />
           </ProtectedRoute>
         } />
         <Route path="/funcionario/novo-lancamento" element={
-          <ProtectedRoute profile={profile} allowedRole="funcionario">
+          <ProtectedRoute profile={profile} profileLoading={profileLoading} allowedRole="funcionario">
             <EntryForm profile={profile} />
           </ProtectedRoute>
         } />
         <Route path="/funcionario/lancamento/:id" element={
-          <ProtectedRoute profile={profile} allowedRole="funcionario">
+          <ProtectedRoute profile={profile} profileLoading={profileLoading} allowedRole="funcionario">
             <EntryDetail profile={profile} />
           </ProtectedRoute>
         } />
         <Route path="/coordenador" element={
-          <ProtectedRoute profile={profile} allowedRole="coordenador">
+          <ProtectedRoute profile={profile} profileLoading={profileLoading} allowedRole="coordenador">
             <CoordinatorDashboard profile={profile} />
           </ProtectedRoute>
         } />
@@ -79,3 +90,4 @@ export default function App() {
     </BrowserRouter>
   )
 }
+
