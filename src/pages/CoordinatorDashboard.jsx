@@ -11,7 +11,7 @@ function fmt(v) {
 function formatDate(d) {
   if (!d) return '—'
   const [y,m,day] = d.split('-')
-  return `${day}/${m}/${y}`
+  return day + '/' + m + '/' + y
 }
 
 export default function CoordinatorDashboard({ profile }) {
@@ -43,8 +43,8 @@ export default function CoordinatorDashboard({ profile }) {
 
   async function loadEntries(userId) {
     setLoading(true)
-    const startDate = `${viewYear}-${String(viewMonth+1).padStart(2,'0')}-01`
-    const endDate = `${viewYear}-${String(viewMonth+1).padStart(2,'0')}-31`
+    const startDate = viewYear + '-' + String(viewMonth + 1).padStart(2, '0') + '-01'
+    const endDate = viewYear + '-' + String(viewMonth + 1).padStart(2, '0') + '-31'
     const { data: e } = await supabase
       .from('daily_entries')
       .select('*, entry_files(*)')
@@ -53,14 +53,14 @@ export default function CoordinatorDashboard({ profile }) {
       .lte('data', endDate)
       .order('data')
     setEntries(e || [])
-    setAllFiles(e?.flatMap(x => x.entry_files || []) || [])
+    setAllFiles(e ? e.flatMap(x => x.entry_files || []) : [])
     setLoading(false)
   }
 
   async function downloadFile(file) {
     const bucket = file.tipo === 'relatorio' ? 'relatorios' : 'notas-refeicao'
     const { data } = await supabase.storage.from(bucket).createSignedUrl(file.storage_path, 300)
-    if (data?.signedUrl) {
+    if (data && data.signedUrl) {
       const a = document.createElement('a')
       a.href = data.signedUrl
       a.download = file.nome_arquivo
@@ -71,10 +71,13 @@ export default function CoordinatorDashboard({ profile }) {
 
   async function downloadAllFiles(tipo) {
     setDownloading(true)
-    const filtered = allFiles.filter(f => tipo === 'all' || f.tipo === tipo)
+    let filtered
+    if (tipo === 'all') filtered = allFiles
+    else if (tipo === 'comprovantes') filtered = allFiles.filter(f => f.tipo !== 'relatorio')
+    else filtered = allFiles.filter(f => f.tipo === tipo)
     for (const file of filtered) {
       await downloadFile(file)
-      await new Promise(r => setTimeout(r, 500)) // small delay between downloads
+      await new Promise(r => setTimeout(r, 500))
     }
     setDownloading(false)
   }
@@ -87,45 +90,36 @@ export default function CoordinatorDashboard({ profile }) {
       'Para': e.destino,
       'Local/Empresa': e.local_empresa,
       'Projeto': e.projeto,
-      'Nº Relatório': e.relatorio_num,
-      'Serviço': e.servico_executado,
-      'H. Normais': e.horas_normais,
-      'H. Sábado': e.horas_sabado,
-      'H. Dom/Fer.': e.horas_domingo,
+      'N\u00BA Relat\u00f3rio': e.relatorio_num,
+      'Servi\u00e7o': e.servico_executado,
+      'Di\u00e1ria Normal (R$)': e.diaria_normal,
+      'Di\u00e1ria S\u00e1bado (R$)': e.diaria_sabado,
+      'Di\u00e1ria Dom/Fer (R$)': e.diaria_domingo,
       'KM': e.km_percorrido,
       'KM (R$)': e.km_total,
-      'Refeição': e.refeicao,
-      'Pedágio/Estac.': e.pedagios,
+      'Refei\u00e7\u00e3o': e.refeicao,
+      'Ped\u00e1gio/Estac.': e.pedagios,
       'Passagens': e.passagens,
-      'Táxi/Combustível': e.taxi_combustivel,
+      'T\u00e1xi/Combust\u00edvel': e.taxi_combustivel,
       'Hotel': e.hotel,
       'Subtotal Despesas': e.subtotal,
-      'Relatório Feito': e.relatorio_feito ? 'Sim' : 'Não',
-      'Observações': e.observacoes,
+      'Relat\u00f3rio Feito': e.relatorio_feito ? 'Sim' : 'N\u00e3o',
+      'Observa\u00e7\u00f5es': e.observacoes,
     }))
 
     const ws = XLSX.utils.json_to_sheet(rows)
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'Lançamentos')
-
-    // Totals row
-    const totals = entries.reduce((acc, e) => ({
-      horas: acc.horas + (e.horas_normais||0) + (e.horas_sabado||0) + (e.horas_domingo||0),
-      km: acc.km + (e.km_percorrido||0),
-      subtotal: acc.subtotal + (e.subtotal||0)
-    }), { horas: 0, km: 0, subtotal: 0 })
-
-    XLSX.writeFile(wb, `RT_Coimbra_${selectedEmployee.nome}_${MONTHS[viewMonth]}_${viewYear}.xlsx`)
+    XLSX.writeFile(wb, 'RT_Coimbra_' + selectedEmployee.nome + '_' + MONTHS[viewMonth] + '_' + viewYear + '.xlsx')
   }
 
-  // Totals
   const totals = entries.reduce((acc, e) => ({
-    horas: acc.horas + (e.horas_normais||0) + (e.horas_sabado||0) + (e.horas_domingo||0),
-    km: acc.km + (e.km_percorrido||0),
-    despesas: acc.despesas + (e.subtotal||0),
-  }), { horas: 0, km: 0, despesas: 0 })
+    diarias: acc.diarias + (e.diaria_normal || 0) + (e.diaria_sabado || 0) + (e.diaria_domingo || 0),
+    km: acc.km + (e.km_percorrido || 0),
+    despesas: acc.despesas + (e.subtotal || 0),
+  }), { diarias: 0, km: 0, despesas: 0 })
 
-  const totalGeral = totals.horas + totals.despesas
+  const totalGeral = totals.diarias + totals.despesas
 
   return (
     <div style={{ minHeight: '100vh', background: '#f4f6fb' }}>
@@ -139,7 +133,7 @@ export default function CoordinatorDashboard({ profile }) {
 
         <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: 20, alignItems: 'start' }}>
 
-          {/* Employee list */}
+          {/* Lista de funcionários */}
           <div className="card">
             <div className="card-header"><h2>Funcionários</h2></div>
             <div>
@@ -151,18 +145,18 @@ export default function CoordinatorDashboard({ profile }) {
               ) : employees.map(emp => (
                 <div
                   key={emp.id}
-                  onClick={() => setSelectedEmployee(selectedEmployee?.id === emp.id ? null : emp)}
+                  onClick={() => setSelectedEmployee(selectedEmployee && selectedEmployee.id === emp.id ? null : emp)}
                   style={{
                     padding: '12px 16px',
                     cursor: 'pointer',
                     borderBottom: '1px solid #e8ecf4',
-                    background: selectedEmployee?.id === emp.id ? '#e8ecf4' : 'white',
+                    background: selectedEmployee && selectedEmployee.id === emp.id ? '#e8ecf4' : 'white',
                     transition: 'background 0.1s'
                   }}
                 >
                   <div style={{ fontWeight: 700, fontSize: '0.88rem', color: '#1e2d6b' }}>{emp.nome}</div>
                   <div style={{ fontSize: '0.75rem', color: '#8a9bb5', marginTop: 2 }}>
-                    Inspetor Nº {emp.numero_inspetor} · {emp.sigla}
+                    Inspetor N&#186; {emp.numero_inspetor} · {emp.sigla}
                   </div>
                   <div style={{ fontSize: '0.73rem', color: '#8a9bb5' }}>{emp.email}</div>
                 </div>
@@ -170,7 +164,7 @@ export default function CoordinatorDashboard({ profile }) {
             </div>
           </div>
 
-          {/* Main panel */}
+          {/* Painel principal */}
           <div>
             {!selectedEmployee ? (
               <div className="card">
@@ -181,7 +175,7 @@ export default function CoordinatorDashboard({ profile }) {
               </div>
             ) : (
               <>
-                {/* Month navigation */}
+                {/* Navegação de mês */}
                 <div className="card" style={{ marginBottom: 16 }}>
                   <div className="card-header">
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -204,11 +198,11 @@ export default function CoordinatorDashboard({ profile }) {
                     </div>
                   </div>
 
-                  {/* Totals */}
+                  {/* Totais */}
                   <div style={{ padding: '12px 20px', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, borderBottom: '1px solid #e8ecf4' }}>
                     {[
-                      { label: 'Total de Horas', value: `${totals.horas}h` },
-                      { label: 'KM Percorrido', value: `${totals.km} km` },
+                      { label: 'Total Diárias', value: fmt(totals.diarias) },
+                      { label: 'KM Percorrido', value: totals.km + ' km' },
                       { label: 'Total Despesas', value: fmt(totals.despesas) },
                       { label: 'Total Geral', value: fmt(totalGeral) },
                     ].map(t => (
@@ -219,15 +213,15 @@ export default function CoordinatorDashboard({ profile }) {
                     ))}
                   </div>
 
-                  {/* Download buttons */}
+                  {/* Botões de download */}
                   {allFiles.length > 0 && (
                     <div style={{ padding: '12px 20px', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                       <span style={{ fontSize: '0.82rem', color: '#4a5568', alignSelf: 'center' }}>Baixar arquivos:</span>
                       <button className="btn btn-secondary btn-sm" onClick={() => downloadAllFiles('relatorio')} disabled={downloading}>
                         📄 Relatórios ({allFiles.filter(f => f.tipo === 'relatorio').length})
                       </button>
-                      <button className="btn btn-secondary btn-sm" onClick={() => downloadAllFiles('nota_refeicao')} disabled={downloading}>
-                        🧾 Notas de Refeição ({allFiles.filter(f => f.tipo === 'nota_refeicao').length})
+                      <button className="btn btn-secondary btn-sm" onClick={() => downloadAllFiles('comprovantes')} disabled={downloading}>
+                        🧾 Comprovantes ({allFiles.filter(f => f.tipo !== 'relatorio').length})
                       </button>
                       <button className="btn btn-primary btn-sm" onClick={() => downloadAllFiles('all')} disabled={downloading}>
                         {downloading ? 'Baixando...' : '⬇ Baixar Tudo'}
@@ -236,7 +230,7 @@ export default function CoordinatorDashboard({ profile }) {
                   )}
                 </div>
 
-                {/* Entries table */}
+                {/* Tabela de lançamentos */}
                 <div className="card">
                   {loading ? (
                     <div className="loading">Carregando lançamentos...</div>
@@ -253,7 +247,7 @@ export default function CoordinatorDashboard({ profile }) {
                             <th>Data</th>
                             <th>Local / Empresa</th>
                             <th>Serviço</th>
-                            <th>Horas</th>
+                            <th>Diárias</th>
                             <th>KM</th>
                             <th>Despesas</th>
                             <th>Relatório</th>
@@ -266,11 +260,11 @@ export default function CoordinatorDashboard({ profile }) {
                               <td style={{ whiteSpace: 'nowrap' }}>{formatDate(e.data)}</td>
                               <td style={{ fontWeight: 600 }}>{e.local_empresa}</td>
                               <td style={{ color: '#4a5568', fontSize: '0.83rem' }}>{e.servico_executado}</td>
-                              <td>{(e.horas_normais||0)+(e.horas_sabado||0)+(e.horas_domingo||0)}h</td>
-                              <td>{e.km_percorrido ? `${e.km_percorrido} km` : '—'}</td>
+                              <td>{fmt((e.diaria_normal || 0) + (e.diaria_sabado || 0) + (e.diaria_domingo || 0))}</td>
+                              <td>{e.km_percorrido ? e.km_percorrido + ' km' : '—'}</td>
                               <td>{e.subtotal > 0 ? fmt(e.subtotal) : '—'}</td>
                               <td>
-                                <span className={`badge ${e.relatorio_feito ? 'badge-green' : 'badge-orange'}`}>
+                                <span className={'badge ' + (e.relatorio_feito ? 'badge-green' : 'badge-orange')}>
                                   {e.relatorio_feito ? '✓' : '⏳'}
                                 </span>
                               </td>
