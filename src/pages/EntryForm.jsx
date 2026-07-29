@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams, useParams } from 'react-router-dom'
 import { supabase } from '../supabase'
 import Header from '../components/Header'
 
@@ -17,16 +17,18 @@ const INITIAL_FORM = {
 }
 
 const COMPROVANTES_CONFIG = [
-  { tipo: 'refeicao',  label: 'Refeição',                icon: '🍽️' },
+  { tipo: 'refeicao',  label: 'Refeição',                  icon: '🍽️' },
   { tipo: 'pedagio',  label: 'Pedágio / Estac. / Locação', icon: '🛣️' },
-  { tipo: 'passagem', label: 'Passagens',                 icon: '✈️' },
-  { tipo: 'taxi',     label: 'Táxi / Combustível',        icon: '🚕' },
-  { tipo: 'hotel',    label: 'Hotel',                     icon: '🏨' },
+  { tipo: 'passagem', label: 'Passagens',                   icon: '✈️' },
+  { tipo: 'taxi',     label: 'Táxi / Combustível',          icon: '🚕' },
+  { tipo: 'hotel',    label: 'Hotel',                       icon: '🏨' },
 ]
 
 export default function EntryForm({ profile }) {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
+  const { id: editId } = useParams()
+  const isEditing = !!editId
   const dataParam = searchParams.get('data')
   const DRAFT_KEY = 'rtcoimbra_draft_' + profile.id
 
@@ -34,23 +36,42 @@ export default function EntryForm({ profile }) {
   const [relatorios, setRelatorios] = useState([])
   const [comprovantes, setComprovantes] = useState({ refeicao: null, pedagio: null, passagem: null, taxi: null, hotel: null })
   const [loading, setLoading] = useState(false)
+  const [loadingEntry, setLoadingEntry] = useState(isEditing)
   const [error, setError] = useState('')
   const [draftRestored, setDraftRestored] = useState(false)
 
-  // Restaura rascunho ao montar
+  // Carrega entrada existente no modo edição
   useEffect(() => {
+    if (isEditing) {
+      supabase.from('daily_entries').select('*').eq('id', editId).single()
+        .then(({ data }) => {
+          if (data) setForm(data)
+          setLoadingEntry(false)
+        })
+    }
+  }, [editId])
+
+  // Restaura rascunho apenas no modo criação e apenas se a data bate
+  useEffect(() => {
+    if (isEditing) return
     try {
       const saved = sessionStorage.getItem(DRAFT_KEY)
       if (saved) {
         const parsed = JSON.parse(saved)
-        setForm(f => ({ ...f, ...parsed, data: dataParam || parsed.data || '' }))
-        setDraftRestored(true)
+        // Só restaura se a data do rascunho bate com a data atual
+        if (!dataParam || parsed.data === dataParam) {
+          setForm(f => ({ ...f, ...parsed, data: dataParam || parsed.data || '' }))
+          setDraftRestored(true)
+        } else {
+          sessionStorage.removeItem(DRAFT_KEY)
+        }
       }
     } catch {}
   }, [])
 
-  // Salva rascunho sempre que o form muda
+  // Salva rascunho no modo criação
   useEffect(() => {
+    if (isEditing) return
     try { sessionStorage.setItem(DRAFT_KEY, JSON.stringify(form)) } catch {}
   }, [form])
 
@@ -95,38 +116,59 @@ export default function EntryForm({ profile }) {
     setLoading(true)
     setError('')
 
-    const { data: entry, error: entryError } = await supabase
-      .from('daily_entries')
-      .insert({ ...form, user_id: profile.id })
-      .select()
-      .single()
+    let entryId
 
-    if (entryError) { setError(entryError.message); setLoading(false); return }
+    if (isEditing) {
+      // Atualiza lançamento existente
+      const { error: updateError } = await supabase
+        .from('daily_entries')
+        .update({
+          data: form.data, origem: form.origem, destino: form.destino,
+          local_empresa: form.local_empresa, projeto: form.projeto,
+          relatorio_num: form.relatorio_num, servico_executado: form.servico_executado,
+          diaria_normal: form.diaria_normal, diaria_sabado: form.diaria_sabado, diaria_domingo: form.diaria_domingo,
+          km_percorrido: form.km_percorrido, km_valor_unitario: form.km_valor_unitario, km_total: form.km_total,
+          refeicao: form.refeicao, pedagios: form.pedagios, passagens: form.passagens,
+          taxi_combustivel: form.taxi_combustivel, hotel: form.hotel,
+          subtotal: form.subtotal, observacoes: form.observacoes, relatorio_feito: form.relatorio_feito
+        })
+        .eq('id', editId)
+      if (updateError) { setError(updateError.message); setLoading(false); return }
+      entryId = editId
+    } else {
+      // Cria novo lançamento
+      const { data: entry, error: entryError } = await supabase
+        .from('daily_entries')
+        .insert({ ...form, user_id: profile.id })
+        .select().single()
+      if (entryError) { setError(entryError.message); setLoading(false); return }
+      entryId = entry.id
+    }
 
-    // Upload múltiplos relatórios
+    // Upload novos relatórios
     for (const file of relatorios) {
       const ext = file.name.split('.').pop()
-      const path = profile.id + '/' + entry.id + '/relatorio_' + Date.now() + '.' + ext
+      const path = profile.id + '/' + entryId + '/relatorio_' + Date.now() + '.' + ext
       const { error: uploadError } = await supabase.storage.from('relatorios').upload(path, file)
       if (!uploadError) {
         await supabase.from('entry_files').insert({
-          entry_id: entry.id, user_id: profile.id,
+          entry_id: entryId, user_id: profile.id,
           tipo: 'relatorio', nome_arquivo: file.name,
           storage_path: path, tamanho_bytes: file.size
         })
       }
     }
 
-    // Upload comprovantes por tipo
+    // Upload novos comprovantes
     for (const { tipo } of COMPROVANTES_CONFIG) {
       const file = comprovantes[tipo]
       if (!file) continue
       const ext = file.name.split('.').pop()
-      const path = profile.id + '/' + entry.id + '/' + tipo + '_' + Date.now() + '.' + ext
+      const path = profile.id + '/' + entryId + '/' + tipo + '_' + Date.now() + '.' + ext
       const { error: uploadError } = await supabase.storage.from('notas-refeicao').upload(path, file)
       if (!uploadError) {
         await supabase.from('entry_files').insert({
-          entry_id: entry.id, user_id: profile.id,
+          entry_id: entryId, user_id: profile.id,
           tipo, nome_arquivo: file.name,
           storage_path: path, tamanho_bytes: file.size
         })
@@ -134,10 +176,17 @@ export default function EntryForm({ profile }) {
     }
 
     try { sessionStorage.removeItem(DRAFT_KEY) } catch {}
-    navigate('/funcionario/lancamento/' + entry.id)
+    navigate('/funcionario/lancamento/' + entryId)
   }
 
   const totalDiarias = parseFloat(form.diaria_normal || 0) + parseFloat(form.diaria_sabado || 0) + parseFloat(form.diaria_domingo || 0)
+
+  if (loadingEntry) return (
+    <div style={{ minHeight: '100vh', background: '#f4f6fb' }}>
+      <Header profile={profile} />
+      <div className="loading">Carregando lançamento...</div>
+    </div>
+  )
 
   return (
     <div style={{ minHeight: '100vh', background: '#f4f6fb' }}>
@@ -145,9 +194,11 @@ export default function EntryForm({ profile }) {
       <div style={{ maxWidth: 820, margin: '0 auto', padding: '24px 16px' }}>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-          <button className="btn btn-secondary btn-sm" onClick={() => navigate('/funcionario')}>&#8592; Voltar</button>
-          <h1 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#1e2d6b' }}>Novo Lançamento</h1>
-          {draftRestored && (
+          <button className="btn btn-secondary btn-sm" onClick={() => navigate(isEditing ? '/funcionario/lancamento/' + editId : '/funcionario')}>&#8592; Voltar</button>
+          <h1 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#1e2d6b' }}>
+            {isEditing ? 'Editar Lançamento' : 'Novo Lançamento'}
+          </h1>
+          {draftRestored && !isEditing && (
             <span style={{ fontSize: '0.75rem', color: '#38a169', background: '#f0fff4', padding: '2px 8px', borderRadius: 12 }}>
               📋 Rascunho restaurado
             </span>
@@ -279,12 +330,13 @@ export default function EntryForm({ profile }) {
             </div>
           </div>
 
-          {/* Arquivos */}
+          {/* Arquivos — apenas no modo criação ou como adição no modo edição */}
           <div className="card" style={{ marginBottom: 16 }}>
-            <div className="card-header"><h2>Arquivos</h2></div>
+            <div className="card-header">
+              <h2>Arquivos</h2>
+              {isEditing && <span style={{ fontSize: '0.8rem', color: '#8a9bb5' }}>Arquivos existentes podem ser gerenciados na tela de detalhe</span>}
+            </div>
             <div className="card-body">
-
-              {/* Relatórios — múltiplos */}
               <div style={{ marginBottom: 20 }}>
                 <div style={{ fontWeight: 600, color: '#4a5568', fontSize: '0.78rem', textTransform: 'uppercase', marginBottom: 8 }}>
                   Relatórios Diários (PDF ou DOCX)
@@ -298,23 +350,17 @@ export default function EntryForm({ profile }) {
                 ))}
                 <label className="file-upload-area" style={{ display: 'block', cursor: 'pointer' }}>
                   <input type="file" accept=".pdf,.docx,.doc" multiple onChange={addRelatorios} style={{ display: 'none' }} />
-                  <div>
-                    📄 {relatorios.length > 0 ? '+ Adicionar outro relatório' : 'Clique para anexar relatório(s)'}
-                    <br /><small>PDF ou DOCX — pode adicionar vários</small>
-                  </div>
+                  <div>📄 {relatorios.length > 0 ? '+ Adicionar outro relatório' : 'Clique para anexar relatório(s)'}<br /><small>PDF ou DOCX — pode adicionar vários</small></div>
                 </label>
               </div>
 
-              {/* Comprovantes por tipo */}
               <div style={{ fontWeight: 600, color: '#4a5568', fontSize: '0.78rem', textTransform: 'uppercase', marginBottom: 8 }}>
                 Comprovantes de Despesas
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 10 }}>
                 {COMPROVANTES_CONFIG.map(({ tipo, label, icon }) => (
                   <div key={tipo}>
-                    <div style={{ fontSize: '0.72rem', color: '#8a9bb5', fontWeight: 600, marginBottom: 4 }}>
-                      {icon} {label.toUpperCase()}
-                    </div>
+                    <div style={{ fontSize: '0.72rem', color: '#8a9bb5', fontWeight: 600, marginBottom: 4 }}>{icon} {label.toUpperCase()}</div>
                     {comprovantes[tipo] ? (
                       <div className="file-item">
                         <span className="file-name" style={{ fontSize: '0.78rem' }}>{comprovantes[tipo].name}</span>
@@ -329,7 +375,6 @@ export default function EntryForm({ profile }) {
                   </div>
                 ))}
               </div>
-
             </div>
           </div>
 
@@ -356,9 +401,9 @@ export default function EntryForm({ profile }) {
               </div>
             </div>
             <div style={{ display: 'flex', gap: 10 }}>
-              <button type="button" className="btn btn-secondary" onClick={() => navigate('/funcionario')}>Cancelar</button>
+              <button type="button" className="btn btn-secondary" onClick={() => navigate(isEditing ? '/funcionario/lancamento/' + editId : '/funcionario')}>Cancelar</button>
               <button type="submit" className="btn btn-primary" disabled={loading}>
-                {loading ? 'Salvando...' : '💾 Salvar Lançamento'}
+                {loading ? 'Salvando...' : (isEditing ? '💾 Salvar Alterações' : '💾 Salvar Lançamento')}
               </button>
             </div>
           </div>
