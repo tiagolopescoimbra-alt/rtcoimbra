@@ -33,6 +33,7 @@ export default function CoordinatorDashboard({ profile }) {
   const [loading, setLoading] = useState(true)
   const [showRelatorios, setShowRelatorios] = useState(false)
   const [showComprovantes, setShowComprovantes] = useState(false)
+  const [downloadingId, setDownloadingId] = useState(null)
 
   useEffect(() => { loadEmployees() }, [profile])
   useEffect(() => {
@@ -44,10 +45,8 @@ export default function CoordinatorDashboard({ profile }) {
 
   async function loadEmployees() {
     const { data } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('coordenador_id', profile.id)
-      .order('nome')
+      .from('profiles').select('*')
+      .eq('coordenador_id', profile.id).order('nome')
     setEmployees(data || [])
     setLoading(false)
   }
@@ -57,27 +56,35 @@ export default function CoordinatorDashboard({ profile }) {
     const startDate = viewYear + '-' + String(viewMonth + 1).padStart(2, '0') + '-01'
     const endDate = viewYear + '-' + String(viewMonth + 1).padStart(2, '0') + '-31'
     const { data: e } = await supabase
-      .from('daily_entries')
-      .select('*, entry_files(*)')
-      .eq('user_id', userId)
-      .gte('data', startDate)
-      .lte('data', endDate)
-      .order('data')
+      .from('daily_entries').select('*, entry_files(*)')
+      .eq('user_id', userId).gte('data', startDate).lte('data', endDate).order('data')
     setEntries(e || [])
     setAllFiles(e ? e.flatMap(x => x.entry_files || []) : [])
     setLoading(false)
   }
 
   async function downloadFile(file) {
+    setDownloadingId(file.id)
     const bucket = file.tipo === 'relatorio' ? 'relatorios' : 'notas-refeicao'
     const { data } = await supabase.storage.from(bucket).createSignedUrl(file.storage_path, 300)
     if (data && data.signedUrl) {
-      const a = document.createElement('a')
-      a.href = data.signedUrl
-      a.download = file.nome_arquivo
-      a.target = '_blank'
-      a.click()
+      try {
+        // Baixa como blob para preservar o nome original
+        const response = await fetch(data.signedUrl)
+        const blob = await response.blob()
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = file.nome_arquivo
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+      } catch {
+        window.open(data.signedUrl, '_blank')
+      }
     }
+    setDownloadingId(null)
   }
 
   function exportXLSX() {
@@ -120,6 +127,38 @@ export default function CoordinatorDashboard({ profile }) {
   const relatorioFiles = allFiles.filter(f => f.tipo === 'relatorio')
   const comprovanteFiles = allFiles.filter(f => f.tipo !== 'relatorio')
 
+  // Mapa de entry_id → entry (para mostrar data/empresa nos grupos)
+  const entryMap = {}
+  entries.forEach(e => { entryMap[e.id] = e })
+
+  // Agrupa relatórios por entry
+  const relatoriosPorEntry = {}
+  relatorioFiles.forEach(f => {
+    if (!relatoriosPorEntry[f.entry_id]) relatoriosPorEntry[f.entry_id] = []
+    relatoriosPorEntry[f.entry_id].push(f)
+  })
+
+  // Agrupa comprovantes por entry
+  const comprovantesPorEntry = {}
+  comprovanteFiles.forEach(f => {
+    if (!comprovantesPorEntry[f.entry_id]) comprovantesPorEntry[f.entry_id] = []
+    comprovantesPorEntry[f.entry_id].push(f)
+  })
+
+  function FileRow({ file }) {
+    const isDownloading = downloadingId === file.id
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0', borderBottom: '1px solid #e8ecf4' }}>
+        <span style={{ fontSize: '0.82rem', flex: 1, color: '#1a202c' }}>
+          {file.tipo === 'relatorio' ? '📄' : '🧾'} {file.nome_arquivo}
+        </span>
+        <button className="btn btn-secondary btn-sm" onClick={() => downloadFile(file)} disabled={isDownloading}>
+          {isDownloading ? '...' : '⬇ Baixar'}
+        </button>
+      </div>
+    )
+  }
+
   return (
     <div style={{ minHeight: '100vh', background: '#f4f6fb' }}>
       <Header profile={profile} />
@@ -132,7 +171,7 @@ export default function CoordinatorDashboard({ profile }) {
 
         <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: 20, alignItems: 'start' }}>
 
-          {/* Lista de funcionários */}
+          {/* Funcionários */}
           <div className="card">
             <div className="card-header"><h2>Funcionários</h2></div>
             <div>
@@ -142,16 +181,13 @@ export default function CoordinatorDashboard({ profile }) {
                   <p>Nenhum funcionário cadastrado ainda</p>
                 </div>
               ) : employees.map(emp => (
-                <div
-                  key={emp.id}
+                <div key={emp.id}
                   onClick={() => setSelectedEmployee(selectedEmployee && selectedEmployee.id === emp.id ? null : emp)}
                   style={{
-                    padding: '12px 16px', cursor: 'pointer',
-                    borderBottom: '1px solid #e8ecf4',
+                    padding: '12px 16px', cursor: 'pointer', borderBottom: '1px solid #e8ecf4',
                     background: selectedEmployee && selectedEmployee.id === emp.id ? '#e8ecf4' : 'white',
                     transition: 'background 0.1s'
-                  }}
-                >
+                  }}>
                   <div style={{ fontWeight: 700, fontSize: '0.88rem', color: '#1e2d6b' }}>{emp.nome}</div>
                   <div style={{ fontSize: '0.75rem', color: '#8a9bb5', marginTop: 2 }}>
                     Inspetor N&#186; {emp.numero_inspetor} · {emp.sigla}
@@ -216,50 +252,64 @@ export default function CoordinatorDashboard({ profile }) {
                         <span style={{ fontSize: '0.82rem', color: '#4a5568', alignSelf: 'center' }}>Arquivos:</span>
                         <button
                           className={'btn btn-sm ' + (showRelatorios ? 'btn-primary' : 'btn-secondary')}
-                          onClick={() => { setShowRelatorios(!showRelatorios); setShowComprovantes(false) }}
-                        >
+                          onClick={() => { setShowRelatorios(!showRelatorios); setShowComprovantes(false) }}>
                           📄 Relatórios ({relatorioFiles.length})
                         </button>
                         <button
                           className={'btn btn-sm ' + (showComprovantes ? 'btn-primary' : 'btn-secondary')}
                           onClick={() => { setShowComprovantes(!showComprovantes); setShowRelatorios(false) }}
-                          disabled={comprovanteFiles.length === 0}
-                        >
+                          disabled={comprovanteFiles.length === 0}>
                           🧾 Comprovantes ({comprovanteFiles.length})
                         </button>
                       </div>
 
-                      {/* Painel relatórios */}
+                      {/* Painel relatórios — agrupado por data/empresa */}
                       {showRelatorios && (
                         <div style={{ background: '#f4f6fb', borderRadius: 8, padding: '12px 14px' }}>
-                          <div style={{ fontWeight: 700, fontSize: '0.82rem', color: '#1e2d6b', marginBottom: 8 }}>📄 Relatórios enviados</div>
-                          {relatorioFiles.length === 0 ? (
-                            <p style={{ color: '#8a9bb5', fontSize: '0.82rem' }}>Nenhum relatório</p>
-                          ) : relatorioFiles.map(f => (
-                            <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0', borderBottom: '1px solid #e8ecf4' }}>
-                              <span style={{ fontSize: '0.82rem', flex: 1, color: '#1a202c' }}>📄 {f.nome_arquivo}</span>
-                              <button className="btn btn-secondary btn-sm" onClick={() => downloadFile(f)}>⬇ Baixar</button>
-                            </div>
-                          ))}
+                          <div style={{ fontWeight: 700, fontSize: '0.82rem', color: '#1e2d6b', marginBottom: 12 }}>📄 Relatórios enviados</div>
+                          {Object.entries(relatoriosPorEntry).map(([entryId, files]) => {
+                            const entry = entryMap[entryId]
+                            return (
+                              <div key={entryId} style={{ marginBottom: 14 }}>
+                                <div style={{
+                                  fontSize: '0.75rem', fontWeight: 700, color: '#1e2d6b',
+                                  background: '#e8ecf4', borderRadius: 4, padding: '4px 8px', marginBottom: 4
+                                }}>
+                                  📅 {formatDate(entry && entry.data)} — {entry && entry.local_empresa}
+                                </div>
+                                {files.map(f => <FileRow key={f.id} file={f} />)}
+                              </div>
+                            )
+                          })}
                         </div>
                       )}
 
-                      {/* Painel comprovantes */}
+                      {/* Painel comprovantes — agrupado por data/empresa */}
                       {showComprovantes && (
                         <div style={{ background: '#f4f6fb', borderRadius: 8, padding: '12px 14px' }}>
-                          <div style={{ fontWeight: 700, fontSize: '0.82rem', color: '#1e2d6b', marginBottom: 10 }}>🧾 Comprovantes enviados</div>
-                          {Object.entries(COMPROVANTE_LABELS).map(([tipo, { label, icon }]) => {
-                            const tipoFiles = comprovanteFiles.filter(f => f.tipo === tipo)
-                            if (tipoFiles.length === 0) return null
+                          <div style={{ fontWeight: 700, fontSize: '0.82rem', color: '#1e2d6b', marginBottom: 12 }}>🧾 Comprovantes enviados</div>
+                          {Object.entries(comprovantesPorEntry).map(([entryId, files]) => {
+                            const entry = entryMap[entryId]
                             return (
-                              <div key={tipo} style={{ marginBottom: 12 }}>
-                                <div style={{ fontSize: '0.75rem', color: '#8a9bb5', fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>{icon} {label}</div>
-                                {tipoFiles.map(f => (
-                                  <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0', borderBottom: '1px solid #e8ecf4' }}>
-                                    <span style={{ fontSize: '0.82rem', flex: 1, color: '#1a202c' }}>{f.nome_arquivo}</span>
-                                    <button className="btn btn-secondary btn-sm" onClick={() => downloadFile(f)}>⬇ Baixar</button>
-                                  </div>
-                                ))}
+                              <div key={entryId} style={{ marginBottom: 14 }}>
+                                <div style={{
+                                  fontSize: '0.75rem', fontWeight: 700, color: '#1e2d6b',
+                                  background: '#e8ecf4', borderRadius: 4, padding: '4px 8px', marginBottom: 4
+                                }}>
+                                  📅 {formatDate(entry && entry.data)} — {entry && entry.local_empresa}
+                                </div>
+                                {Object.entries(COMPROVANTE_LABELS).map(([tipo, { label, icon }]) => {
+                                  const tipoFiles = files.filter(f => f.tipo === tipo)
+                                  if (tipoFiles.length === 0) return null
+                                  return (
+                                    <div key={tipo}>
+                                      <div style={{ fontSize: '0.72rem', color: '#8a9bb5', fontWeight: 600, padding: '4px 0' }}>
+                                        {icon} {label}
+                                      </div>
+                                      {tipoFiles.map(f => <FileRow key={f.id} file={f} />)}
+                                    </div>
+                                  )
+                                })}
                               </div>
                             )
                           })}
@@ -313,21 +363,19 @@ export default function CoordinatorDashboard({ profile }) {
                                 ) : (
                                   <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                                     {(e.entry_files || []).map(f => (
-                                      <button
-                                        key={f.id}
-                                        onClick={() => downloadFile(f)}
+                                      <button key={f.id} onClick={() => downloadFile(f)}
+                                        disabled={downloadingId === f.id}
                                         style={{
                                           display: 'flex', alignItems: 'center', gap: 4,
                                           background: 'none', border: '1px solid #d1d9e8',
-                                          borderRadius: 4, padding: '2px 6px',
-                                          cursor: 'pointer', fontSize: '0.73rem', color: '#1e2d6b',
-                                          textAlign: 'left', maxWidth: 180
-                                        }}
-                                        title={f.nome_arquivo}
-                                      >
+                                          borderRadius: 4, padding: '2px 6px', cursor: 'pointer',
+                                          fontSize: '0.73rem', color: '#1e2d6b', textAlign: 'left', maxWidth: 200
+                                        }} title={f.nome_arquivo}>
                                         <span>{f.tipo === 'relatorio' ? '📄' : '🧾'}</span>
-                                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{f.nome_arquivo}</span>
-                                        <span>⬇</span>
+                                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                                          {f.nome_arquivo}
+                                        </span>
+                                        <span>{downloadingId === f.id ? '...' : '⬇'}</span>
                                       </button>
                                     ))}
                                   </div>
