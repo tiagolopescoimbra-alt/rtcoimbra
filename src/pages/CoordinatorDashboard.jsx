@@ -5,6 +5,14 @@ import * as XLSX from 'xlsx'
 
 const MONTHS = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
 
+const COMPROVANTE_LABELS = {
+  refeicao:  { label: 'Refeição',                  icon: '🍽️' },
+  pedagio:   { label: 'Pedágio / Estac. / Locação', icon: '🛣️' },
+  passagem:  { label: 'Passagens',                  icon: '✈️' },
+  taxi:      { label: 'Táxi / Combustível',          icon: '🚕' },
+  hotel:     { label: 'Hotel',                      icon: '🏨' },
+}
+
 function fmt(v) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v || 0)
 }
@@ -23,10 +31,13 @@ export default function CoordinatorDashboard({ profile }) {
   const [entries, setEntries] = useState([])
   const [allFiles, setAllFiles] = useState([])
   const [loading, setLoading] = useState(true)
-  const [downloading, setDownloading] = useState(false)
+  const [showRelatorios, setShowRelatorios] = useState(false)
+  const [showComprovantes, setShowComprovantes] = useState(false)
 
   useEffect(() => { loadEmployees() }, [profile])
   useEffect(() => {
+    setShowRelatorios(false)
+    setShowComprovantes(false)
     if (selectedEmployee) loadEntries(selectedEmployee.id)
     else setEntries([])
   }, [selectedEmployee, viewYear, viewMonth])
@@ -69,19 +80,6 @@ export default function CoordinatorDashboard({ profile }) {
     }
   }
 
-  async function downloadAllFiles(tipo) {
-    setDownloading(true)
-    let filtered
-    if (tipo === 'all') filtered = allFiles
-    else if (tipo === 'comprovantes') filtered = allFiles.filter(f => f.tipo !== 'relatorio')
-    else filtered = allFiles.filter(f => f.tipo === tipo)
-    for (const file of filtered) {
-      await downloadFile(file)
-      await new Promise(r => setTimeout(r, 500))
-    }
-    setDownloading(false)
-  }
-
   function exportXLSX() {
     if (!selectedEmployee || entries.length === 0) return
     const rows = entries.map(e => ({
@@ -106,10 +104,9 @@ export default function CoordinatorDashboard({ profile }) {
       'Relat\u00f3rio Feito': e.relatorio_feito ? 'Sim' : 'N\u00e3o',
       'Observa\u00e7\u00f5es': e.observacoes,
     }))
-
     const ws = XLSX.utils.json_to_sheet(rows)
     const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, 'Lançamentos')
+    XLSX.utils.book_append_sheet(wb, ws, 'Lan\u00e7amentos')
     XLSX.writeFile(wb, 'RT_Coimbra_' + selectedEmployee.nome + '_' + MONTHS[viewMonth] + '_' + viewYear + '.xlsx')
   }
 
@@ -120,6 +117,8 @@ export default function CoordinatorDashboard({ profile }) {
   }), { diarias: 0, km: 0, despesas: 0 })
 
   const totalGeral = totals.diarias + totals.despesas
+  const relatorioFiles = allFiles.filter(f => f.tipo === 'relatorio')
+  const comprovanteFiles = allFiles.filter(f => f.tipo !== 'relatorio')
 
   return (
     <div style={{ minHeight: '100vh', background: '#f4f6fb' }}>
@@ -147,8 +146,7 @@ export default function CoordinatorDashboard({ profile }) {
                   key={emp.id}
                   onClick={() => setSelectedEmployee(selectedEmployee && selectedEmployee.id === emp.id ? null : emp)}
                   style={{
-                    padding: '12px 16px',
-                    cursor: 'pointer',
+                    padding: '12px 16px', cursor: 'pointer',
                     borderBottom: '1px solid #e8ecf4',
                     background: selectedEmployee && selectedEmployee.id === emp.id ? '#e8ecf4' : 'white',
                     transition: 'background 0.1s'
@@ -175,8 +173,8 @@ export default function CoordinatorDashboard({ profile }) {
               </div>
             ) : (
               <>
-                {/* Navegação de mês */}
                 <div className="card" style={{ marginBottom: 16 }}>
+                  {/* Cabeçalho mês */}
                   <div className="card-header">
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       <button className="btn btn-secondary btn-sm" onClick={() => {
@@ -191,11 +189,9 @@ export default function CoordinatorDashboard({ profile }) {
                         setViewMonth(m); setViewYear(y)
                       }}>›</button>
                     </div>
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <button className="btn btn-secondary btn-sm" onClick={exportXLSX} disabled={entries.length === 0}>
-                        📊 Exportar XLSX
-                      </button>
-                    </div>
+                    <button className="btn btn-secondary btn-sm" onClick={exportXLSX} disabled={entries.length === 0}>
+                      📊 Exportar XLSX
+                    </button>
                   </div>
 
                   {/* Totais */}
@@ -213,19 +209,62 @@ export default function CoordinatorDashboard({ profile }) {
                     ))}
                   </div>
 
-                  {/* Botões de download */}
+                  {/* Botões de arquivos */}
                   {allFiles.length > 0 && (
-                    <div style={{ padding: '12px 20px', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: '0.82rem', color: '#4a5568', alignSelf: 'center' }}>Baixar arquivos:</span>
-                      <button className="btn btn-secondary btn-sm" onClick={() => downloadAllFiles('relatorio')} disabled={downloading}>
-                        📄 Relatórios ({allFiles.filter(f => f.tipo === 'relatorio').length})
-                      </button>
-                      <button className="btn btn-secondary btn-sm" onClick={() => downloadAllFiles('comprovantes')} disabled={downloading}>
-                        🧾 Comprovantes ({allFiles.filter(f => f.tipo !== 'relatorio').length})
-                      </button>
-                      <button className="btn btn-primary btn-sm" onClick={() => downloadAllFiles('all')} disabled={downloading}>
-                        {downloading ? 'Baixando...' : '⬇ Baixar Tudo'}
-                      </button>
+                    <div style={{ padding: '12px 20px' }}>
+                      <div style={{ display: 'flex', gap: 10, marginBottom: (showRelatorios || showComprovantes) ? 12 : 0 }}>
+                        <span style={{ fontSize: '0.82rem', color: '#4a5568', alignSelf: 'center' }}>Arquivos:</span>
+                        <button
+                          className={'btn btn-sm ' + (showRelatorios ? 'btn-primary' : 'btn-secondary')}
+                          onClick={() => { setShowRelatorios(!showRelatorios); setShowComprovantes(false) }}
+                        >
+                          📄 Relatórios ({relatorioFiles.length})
+                        </button>
+                        <button
+                          className={'btn btn-sm ' + (showComprovantes ? 'btn-primary' : 'btn-secondary')}
+                          onClick={() => { setShowComprovantes(!showComprovantes); setShowRelatorios(false) }}
+                          disabled={comprovanteFiles.length === 0}
+                        >
+                          🧾 Comprovantes ({comprovanteFiles.length})
+                        </button>
+                      </div>
+
+                      {/* Painel relatórios */}
+                      {showRelatorios && (
+                        <div style={{ background: '#f4f6fb', borderRadius: 8, padding: '12px 14px' }}>
+                          <div style={{ fontWeight: 700, fontSize: '0.82rem', color: '#1e2d6b', marginBottom: 8 }}>📄 Relatórios enviados</div>
+                          {relatorioFiles.length === 0 ? (
+                            <p style={{ color: '#8a9bb5', fontSize: '0.82rem' }}>Nenhum relatório</p>
+                          ) : relatorioFiles.map(f => (
+                            <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0', borderBottom: '1px solid #e8ecf4' }}>
+                              <span style={{ fontSize: '0.82rem', flex: 1, color: '#1a202c' }}>📄 {f.nome_arquivo}</span>
+                              <button className="btn btn-secondary btn-sm" onClick={() => downloadFile(f)}>⬇ Baixar</button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Painel comprovantes */}
+                      {showComprovantes && (
+                        <div style={{ background: '#f4f6fb', borderRadius: 8, padding: '12px 14px' }}>
+                          <div style={{ fontWeight: 700, fontSize: '0.82rem', color: '#1e2d6b', marginBottom: 10 }}>🧾 Comprovantes enviados</div>
+                          {Object.entries(COMPROVANTE_LABELS).map(([tipo, { label, icon }]) => {
+                            const tipoFiles = comprovanteFiles.filter(f => f.tipo === tipo)
+                            if (tipoFiles.length === 0) return null
+                            return (
+                              <div key={tipo} style={{ marginBottom: 12 }}>
+                                <div style={{ fontSize: '0.75rem', color: '#8a9bb5', fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>{icon} {label}</div>
+                                {tipoFiles.map(f => (
+                                  <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0', borderBottom: '1px solid #e8ecf4' }}>
+                                    <span style={{ fontSize: '0.82rem', flex: 1, color: '#1a202c' }}>{f.nome_arquivo}</span>
+                                    <button className="btn btn-secondary btn-sm" onClick={() => downloadFile(f)}>⬇ Baixar</button>
+                                  </div>
+                                ))}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -268,15 +307,31 @@ export default function CoordinatorDashboard({ profile }) {
                                   {e.relatorio_feito ? '✓' : '⏳'}
                                 </span>
                               </td>
-                              <td>
-                                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                                  {(e.entry_files || []).map(f => (
-                                    <button key={f.id} className="btn btn-secondary btn-sm" onClick={() => downloadFile(f)} title={f.nome_arquivo}>
-                                      {f.tipo === 'relatorio' ? '📄' : '🧾'}
-                                    </button>
-                                  ))}
-                                  {(e.entry_files || []).length === 0 && <span style={{ color: '#8a9bb5', fontSize: '0.75rem' }}>—</span>}
-                                </div>
+                              <td style={{ minWidth: 160 }}>
+                                {(e.entry_files || []).length === 0 ? (
+                                  <span style={{ color: '#8a9bb5', fontSize: '0.75rem' }}>—</span>
+                                ) : (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                                    {(e.entry_files || []).map(f => (
+                                      <button
+                                        key={f.id}
+                                        onClick={() => downloadFile(f)}
+                                        style={{
+                                          display: 'flex', alignItems: 'center', gap: 4,
+                                          background: 'none', border: '1px solid #d1d9e8',
+                                          borderRadius: 4, padding: '2px 6px',
+                                          cursor: 'pointer', fontSize: '0.73rem', color: '#1e2d6b',
+                                          textAlign: 'left', maxWidth: 180
+                                        }}
+                                        title={f.nome_arquivo}
+                                      >
+                                        <span>{f.tipo === 'relatorio' ? '📄' : '🧾'}</span>
+                                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{f.nome_arquivo}</span>
+                                        <span>⬇</span>
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
                               </td>
                             </tr>
                           ))}
