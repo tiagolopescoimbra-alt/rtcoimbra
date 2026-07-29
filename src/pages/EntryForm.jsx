@@ -10,24 +10,52 @@ function formatCurrency(v) {
 const INITIAL_FORM = {
   data: '', origem: '', destino: '', local_empresa: '', projeto: '',
   relatorio_num: '', servico_executado: '',
-  horas_normais: 0, horas_sabado: 0, horas_domingo: 0,
+  diaria_normal: 0, diaria_sabado: 0, diaria_domingo: 0,
   km_percorrido: 0, km_valor_unitario: 1, km_total: 0,
   refeicao: 0, pedagios: 0, passagens: 0, taxi_combustivel: 0, hotel: 0,
   subtotal: 0, observacoes: '', relatorio_feito: false
 }
 
+const COMPROVANTES_CONFIG = [
+  { tipo: 'refeicao',  label: 'Refeição',                icon: '🍽️' },
+  { tipo: 'pedagio',  label: 'Pedágio / Estac. / Locação', icon: '🛣️' },
+  { tipo: 'passagem', label: 'Passagens',                 icon: '✈️' },
+  { tipo: 'taxi',     label: 'Táxi / Combustível',        icon: '🚕' },
+  { tipo: 'hotel',    label: 'Hotel',                     icon: '🏨' },
+]
+
 export default function EntryForm({ profile }) {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const dataParam = searchParams.get('data')
+  const DRAFT_KEY = 'rtcoimbra_draft_' + profile.id
 
   const [form, setForm] = useState({ ...INITIAL_FORM, data: dataParam || '' })
-  const [files, setFiles] = useState({ relatorio: null, nota_refeicao: null })
+  const [relatorios, setRelatorios] = useState([])
+  const [comprovantes, setComprovantes] = useState({ refeicao: null, pedagio: null, passagem: null, taxi: null, hotel: null })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [draftRestored, setDraftRestored] = useState(false)
 
+  // Restaura rascunho ao montar
   useEffect(() => {
-    // Recalcula km_total e subtotal quando valores mudam
+    try {
+      const saved = sessionStorage.getItem(DRAFT_KEY)
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        setForm(f => ({ ...f, ...parsed, data: dataParam || parsed.data || '' }))
+        setDraftRestored(true)
+      }
+    } catch {}
+  }, [])
+
+  // Salva rascunho sempre que o form muda
+  useEffect(() => {
+    try { sessionStorage.setItem(DRAFT_KEY, JSON.stringify(form)) } catch {}
+  }, [form])
+
+  // Recalcula km_total e subtotal
+  useEffect(() => {
     const kmTotal = parseFloat(form.km_percorrido || 0) * parseFloat(form.km_valor_unitario || 1)
     const subtotal = kmTotal +
       parseFloat(form.refeicao || 0) +
@@ -48,6 +76,16 @@ export default function EntryForm({ profile }) {
     setForm(f => ({ ...f, [name]: value === '' ? 0 : parseFloat(value) || 0 }))
   }
 
+  function addRelatorios(e) {
+    const newFiles = Array.from(e.target.files)
+    setRelatorios(prev => [...prev, ...newFiles])
+    e.target.value = ''
+  }
+
+  function removeRelatorio(index) {
+    setRelatorios(prev => prev.filter((_, i) => i !== index))
+  }
+
   async function handleSubmit(e) {
     e.preventDefault()
     if (!form.data) { setError('Informe a data.'); return }
@@ -65,30 +103,41 @@ export default function EntryForm({ profile }) {
 
     if (entryError) { setError(entryError.message); setLoading(false); return }
 
-    // Upload files
-    for (const [tipo, file] of Object.entries(files)) {
-      if (!file) continue
+    // Upload múltiplos relatórios
+    for (const file of relatorios) {
       const ext = file.name.split('.').pop()
-      const path = `${profile.id}/${entry.id}/${tipo}.${ext}`
-      const bucket = tipo === 'relatorio' ? 'relatorios' : 'notas-refeicao'
-
-      const { error: uploadError } = await supabase.storage.from(bucket).upload(path, file)
+      const path = profile.id + '/' + entry.id + '/relatorio_' + Date.now() + '.' + ext
+      const { error: uploadError } = await supabase.storage.from('relatorios').upload(path, file)
       if (!uploadError) {
         await supabase.from('entry_files').insert({
-          entry_id: entry.id,
-          user_id: profile.id,
-          tipo,
-          nome_arquivo: file.name,
-          storage_path: path,
-          tamanho_bytes: file.size
+          entry_id: entry.id, user_id: profile.id,
+          tipo: 'relatorio', nome_arquivo: file.name,
+          storage_path: path, tamanho_bytes: file.size
         })
       }
     }
 
-    navigate(`/funcionario/lancamento/${entry.id}`)
+    // Upload comprovantes por tipo
+    for (const { tipo } of COMPROVANTES_CONFIG) {
+      const file = comprovantes[tipo]
+      if (!file) continue
+      const ext = file.name.split('.').pop()
+      const path = profile.id + '/' + entry.id + '/' + tipo + '_' + Date.now() + '.' + ext
+      const { error: uploadError } = await supabase.storage.from('notas-refeicao').upload(path, file)
+      if (!uploadError) {
+        await supabase.from('entry_files').insert({
+          entry_id: entry.id, user_id: profile.id,
+          tipo, nome_arquivo: file.name,
+          storage_path: path, tamanho_bytes: file.size
+        })
+      }
+    }
+
+    try { sessionStorage.removeItem(DRAFT_KEY) } catch {}
+    navigate('/funcionario/lancamento/' + entry.id)
   }
 
-  const totalHoras = parseFloat(form.horas_normais||0) + parseFloat(form.horas_sabado||0) + parseFloat(form.horas_domingo||0)
+  const totalDiarias = parseFloat(form.diaria_normal || 0) + parseFloat(form.diaria_sabado || 0) + parseFloat(form.diaria_domingo || 0)
 
   return (
     <div style={{ minHeight: '100vh', background: '#f4f6fb' }}>
@@ -96,8 +145,13 @@ export default function EntryForm({ profile }) {
       <div style={{ maxWidth: 820, margin: '0 auto', padding: '24px 16px' }}>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-          <button className="btn btn-secondary btn-sm" onClick={() => navigate('/funcionario')}>← Voltar</button>
+          <button className="btn btn-secondary btn-sm" onClick={() => navigate('/funcionario')}>&#8592; Voltar</button>
           <h1 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#1e2d6b' }}>Novo Lançamento</h1>
+          {draftRestored && (
+            <span style={{ fontSize: '0.75rem', color: '#38a169', background: '#f0fff4', padding: '2px 8px', borderRadius: 12 }}>
+              📋 Rascunho restaurado
+            </span>
+          )}
         </div>
 
         {error && <div className="alert alert-error">{error}</div>}
@@ -118,7 +172,7 @@ export default function EntryForm({ profile }) {
                   <input name="projeto" value={form.projeto} onChange={handleChange} placeholder="Ex: P-84" />
                 </div>
                 <div className="form-group">
-                  <label>Nº do Relatório</label>
+                  <label>N&#186; do Relatório</label>
                   <input name="relatorio_num" value={form.relatorio_num} onChange={handleChange} placeholder="Ex: BP-430" />
                 </div>
               </div>
@@ -145,25 +199,25 @@ export default function EntryForm({ profile }) {
             </div>
           </div>
 
-          {/* Horas */}
+          {/* Diárias */}
           <div className="card" style={{ marginBottom: 16 }}>
             <div className="card-header">
-              <h2>Horas Trabalhadas</h2>
-              <span style={{ fontSize: '0.85rem', color: '#8a9bb5' }}>Total: <strong>{totalHoras}h</strong></span>
+              <h2>Diárias</h2>
+              <span style={{ fontSize: '0.85rem', color: '#8a9bb5' }}>Total: <strong>{formatCurrency(totalDiarias)}</strong></span>
             </div>
             <div className="card-body">
               <div className="form-row-3">
                 <div className="form-group">
-                  <label>Horas Normais</label>
-                  <input name="horas_normais" type="number" min="0" step="0.5" value={form.horas_normais} onChange={handleNum} />
+                  <label>Valor da Diária Normal (R$)</label>
+                  <input name="diaria_normal" type="number" min="0" step="0.01" value={form.diaria_normal} onChange={handleNum} />
                 </div>
                 <div className="form-group">
-                  <label>Horas Sábado</label>
-                  <input name="horas_sabado" type="number" min="0" step="0.5" value={form.horas_sabado} onChange={handleNum} />
+                  <label>Valor da Diária Sábado (R$)</label>
+                  <input name="diaria_sabado" type="number" min="0" step="0.01" value={form.diaria_sabado} onChange={handleNum} />
                 </div>
                 <div className="form-group">
-                  <label>Horas Dom/Feriado</label>
-                  <input name="horas_domingo" type="number" min="0" step="0.5" value={form.horas_domingo} onChange={handleNum} />
+                  <label>Valor da Diária Domingo (R$)</label>
+                  <input name="diaria_domingo" type="number" min="0" step="0.01" value={form.diaria_domingo} onChange={handleNum} />
                 </div>
               </div>
             </div>
@@ -229,45 +283,57 @@ export default function EntryForm({ profile }) {
           <div className="card" style={{ marginBottom: 16 }}>
             <div className="card-header"><h2>Arquivos</h2></div>
             <div className="card-body">
-              <div className="form-row">
-                {/* Relatório */}
-                <div className="form-group">
-                  <label>Relatório Diário (PDF ou DOCX)</label>
-                  <label className="file-upload-area">
-                    <input type="file" accept=".pdf,.docx,.doc" onChange={e => setFiles(f => ({ ...f, relatorio: e.target.files[0] }))} />
-                    {files.relatorio ? (
-                      <div className="file-item">
-                        <span>📄</span>
-                        <span className="file-name">{files.relatorio.name}</span>
-                        <button type="button" onClick={() => setFiles(f => ({ ...f, relatorio: null }))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#e53e3e' }}>✕</button>
-                      </div>
-                    ) : (
-                      <div>📄 Clique para anexar relatório<br /><small>PDF ou DOCX</small></div>
-                    )}
-                  </label>
-                </div>
 
-                {/* Nota de refeição */}
-                <div className="form-group">
-                  <label>Nota de Refeição (PDF ou imagem)</label>
-                  <label className="file-upload-area">
-                    <input type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={e => setFiles(f => ({ ...f, nota_refeicao: e.target.files[0] }))} />
-                    {files.nota_refeicao ? (
+              {/* Relatórios — múltiplos */}
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ fontWeight: 600, color: '#4a5568', fontSize: '0.78rem', textTransform: 'uppercase', marginBottom: 8 }}>
+                  Relatórios Diários (PDF ou DOCX)
+                </div>
+                {relatorios.map((f, i) => (
+                  <div key={i} className="file-item" style={{ marginBottom: 6 }}>
+                    <span>📄</span>
+                    <span className="file-name">{f.name}</span>
+                    <button type="button" onClick={() => removeRelatorio(i)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#e53e3e' }}>✕</button>
+                  </div>
+                ))}
+                <label className="file-upload-area" style={{ display: 'block', cursor: 'pointer' }}>
+                  <input type="file" accept=".pdf,.docx,.doc" multiple onChange={addRelatorios} style={{ display: 'none' }} />
+                  <div>
+                    📄 {relatorios.length > 0 ? '+ Adicionar outro relatório' : 'Clique para anexar relatório(s)'}
+                    <br /><small>PDF ou DOCX — pode adicionar vários</small>
+                  </div>
+                </label>
+              </div>
+
+              {/* Comprovantes por tipo */}
+              <div style={{ fontWeight: 600, color: '#4a5568', fontSize: '0.78rem', textTransform: 'uppercase', marginBottom: 8 }}>
+                Comprovantes de Despesas
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 10 }}>
+                {COMPROVANTES_CONFIG.map(({ tipo, label, icon }) => (
+                  <div key={tipo}>
+                    <div style={{ fontSize: '0.72rem', color: '#8a9bb5', fontWeight: 600, marginBottom: 4 }}>
+                      {icon} {label.toUpperCase()}
+                    </div>
+                    {comprovantes[tipo] ? (
                       <div className="file-item">
-                        <span>🧾</span>
-                        <span className="file-name">{files.nota_refeicao.name}</span>
-                        <button type="button" onClick={() => setFiles(f => ({ ...f, nota_refeicao: null }))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#e53e3e' }}>✕</button>
+                        <span className="file-name" style={{ fontSize: '0.78rem' }}>{comprovantes[tipo].name}</span>
+                        <button type="button" onClick={() => setComprovantes(p => ({ ...p, [tipo]: null }))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#e53e3e' }}>✕</button>
                       </div>
                     ) : (
-                      <div>🧾 Clique para anexar nota<br /><small>PDF, JPG ou PNG</small></div>
+                      <label className="file-upload-area" style={{ display: 'block', padding: '10px', textAlign: 'center', fontSize: '0.78rem', cursor: 'pointer' }}>
+                        <input type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={e => setComprovantes(p => ({ ...p, [tipo]: e.target.files[0] }))} style={{ display: 'none' }} />
+                        <div>📎 Anexar<br /><small>PDF, JPG ou PNG</small></div>
+                      </label>
                     )}
-                  </label>
-                </div>
+                  </div>
+                ))}
               </div>
+
             </div>
           </div>
 
-          {/* Observações + Relatório */}
+          {/* Observações */}
           <div className="card" style={{ marginBottom: 20 }}>
             <div className="card-body">
               <div className="form-group">
@@ -281,12 +347,12 @@ export default function EntryForm({ profile }) {
             </div>
           </div>
 
-          {/* Summary + Submit */}
+          {/* Total + Submit */}
           <div style={{ background: 'white', borderRadius: 10, padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 1px 4px rgba(30,45,107,0.1)' }}>
             <div>
               <div style={{ fontSize: '0.8rem', color: '#8a9bb5' }}>Total do dia</div>
               <div style={{ fontSize: '1.3rem', fontWeight: 700, color: '#1e2d6b' }}>
-                {formatCurrency(totalHoras + form.subtotal)}
+                {formatCurrency(totalDiarias + form.subtotal)}
               </div>
             </div>
             <div style={{ display: 'flex', gap: 10 }}>
