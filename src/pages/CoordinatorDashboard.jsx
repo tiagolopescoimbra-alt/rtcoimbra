@@ -34,6 +34,7 @@ export default function CoordinatorDashboard({ profile }) {
   const [showRelatorios, setShowRelatorios] = useState(false)
   const [showComprovantes, setShowComprovantes] = useState(false)
   const [downloadingId, setDownloadingId] = useState(null)
+  const [obsModal, setObsModal] = useState(null)
 
   useEffect(() => { loadEmployees() }, [profile])
   useEffect(() => {
@@ -69,7 +70,6 @@ export default function CoordinatorDashboard({ profile }) {
     const { data } = await supabase.storage.from(bucket).createSignedUrl(file.storage_path, 300)
     if (data && data.signedUrl) {
       try {
-        // Baixa como blob para preservar o nome original
         const response = await fetch(data.signedUrl)
         const blob = await response.blob()
         const url = URL.createObjectURL(blob)
@@ -95,25 +95,25 @@ export default function CoordinatorDashboard({ profile }) {
       'Para': e.destino,
       'Local/Empresa': e.local_empresa,
       'Projeto': e.projeto,
-      'N\u00BA Relat\u00f3rio': e.relatorio_num,
-      'Servi\u00e7o': e.servico_executado,
-      'Di\u00e1ria Normal (R$)': e.diaria_normal,
-      'Di\u00e1ria S\u00e1bado (R$)': e.diaria_sabado,
-      'Di\u00e1ria Dom/Fer (R$)': e.diaria_domingo,
+      'Nº Relatório': e.relatorio_num,
+      'Serviço': e.servico_executado,
+      'Diária Normal (R$)': e.diaria_normal,
+      'Diária Sábado (R$)': e.diaria_sabado,
+      'Diária Dom/Fer (R$)': e.diaria_domingo,
       'KM': e.km_percorrido,
       'KM (R$)': e.km_total,
-      'Refei\u00e7\u00e3o': e.refeicao,
-      'Ped\u00e1gio/Estac.': e.pedagios,
+      'Refeição': e.refeicao,
+      'Pedágio/Estac.': e.pedagios,
       'Passagens': e.passagens,
-      'T\u00e1xi/Combust\u00edvel': e.taxi_combustivel,
+      'Táxi/Combustível': e.taxi_combustivel,
       'Hotel': e.hotel,
       'Subtotal Despesas': e.subtotal,
-      'Relat\u00f3rio Feito': e.relatorio_feito ? 'Sim' : 'N\u00e3o',
-      'Observa\u00e7\u00f5es': e.observacoes,
+      'Relatório Feito': e.relatorio_feito ? 'Sim' : 'Não',
+      'Observações': e.observacoes,
     }))
     const ws = XLSX.utils.json_to_sheet(rows)
     const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, 'Lan\u00e7amentos')
+    XLSX.utils.book_append_sheet(wb, ws, 'Lançamentos')
     XLSX.writeFile(wb, 'RT_Coimbra_' + selectedEmployee.nome + '_' + MONTHS[viewMonth] + '_' + viewYear + '.xlsx')
   }
 
@@ -127,18 +127,15 @@ export default function CoordinatorDashboard({ profile }) {
   const relatorioFiles = allFiles.filter(f => f.tipo === 'relatorio')
   const comprovanteFiles = allFiles.filter(f => f.tipo !== 'relatorio')
 
-  // Mapa de entry_id → entry (para mostrar data/empresa nos grupos)
   const entryMap = {}
   entries.forEach(e => { entryMap[e.id] = e })
 
-  // Agrupa relatórios por entry
   const relatoriosPorEntry = {}
   relatorioFiles.forEach(f => {
     if (!relatoriosPorEntry[f.entry_id]) relatoriosPorEntry[f.entry_id] = []
     relatoriosPorEntry[f.entry_id].push(f)
   })
 
-  // Agrupa comprovantes por entry
   const comprovantesPorEntry = {}
   comprovanteFiles.forEach(f => {
     if (!comprovantesPorEntry[f.entry_id]) comprovantesPorEntry[f.entry_id] = []
@@ -163,6 +160,18 @@ export default function CoordinatorDashboard({ profile }) {
     <div style={{ minHeight: '100vh', background: '#f4f6fb' }}>
       <Header profile={profile} />
 
+      {obsModal && (
+        <div onClick={() => setObsModal(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 20 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: 'white', borderRadius: 12, padding: '24px 28px', maxWidth: 480, width: '100%', boxShadow: '0 8px 32px rgba(0,0,0,0.18)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <h3 style={{ color: '#1e2d6b', fontWeight: 700, fontSize: '0.95rem' }}>💬 Observações</h3>
+              <button onClick={() => setObsModal(null)} style={{ background: 'none', border: 'none', fontSize: '1.2rem', cursor: 'pointer', color: '#8a9bb5' }}>✕</button>
+            </div>
+            <p style={{ color: '#4a5568', whiteSpace: 'pre-wrap', lineHeight: 1.6, fontSize: '0.88rem' }}>{obsModal}</p>
+          </div>
+        </div>
+      )}
+
       <div style={{ maxWidth: 1200, margin: '0 auto', padding: '24px 16px' }}>
         <div style={{ marginBottom: 20 }}>
           <h1 style={{ fontSize: '1.2rem', fontWeight: 700, color: '#1e2d6b' }}>Painel do Coordenador</h1>
@@ -171,7 +180,6 @@ export default function CoordinatorDashboard({ profile }) {
 
         <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: 20, alignItems: 'start' }}>
 
-          {/* Funcionários */}
           <div className="card">
             <div className="card-header"><h2>Funcionários</h2></div>
             <div>
@@ -198,7 +206,6 @@ export default function CoordinatorDashboard({ profile }) {
             </div>
           </div>
 
-          {/* Painel principal */}
           <div>
             {!selectedEmployee ? (
               <div className="card">
@@ -210,7 +217,6 @@ export default function CoordinatorDashboard({ profile }) {
             ) : (
               <>
                 <div className="card" style={{ marginBottom: 16 }}>
-                  {/* Cabeçalho mês */}
                   <div className="card-header">
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       <button className="btn btn-secondary btn-sm" onClick={() => {
@@ -230,7 +236,6 @@ export default function CoordinatorDashboard({ profile }) {
                     </button>
                   </div>
 
-                  {/* Totais */}
                   <div style={{ padding: '12px 20px', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, borderBottom: '1px solid #e8ecf4' }}>
                     {[
                       { label: 'Total Diárias', value: fmt(totals.diarias) },
@@ -245,7 +250,6 @@ export default function CoordinatorDashboard({ profile }) {
                     ))}
                   </div>
 
-                  {/* Botões de arquivos */}
                   {allFiles.length > 0 && (
                     <div style={{ padding: '12px 20px' }}>
                       <div style={{ display: 'flex', gap: 10, marginBottom: (showRelatorios || showComprovantes) ? 12 : 0 }}>
@@ -263,7 +267,6 @@ export default function CoordinatorDashboard({ profile }) {
                         </button>
                       </div>
 
-                      {/* Painel relatórios — agrupado por data/empresa */}
                       {showRelatorios && (
                         <div style={{ background: '#f4f6fb', borderRadius: 8, padding: '12px 14px' }}>
                           <div style={{ fontWeight: 700, fontSize: '0.82rem', color: '#1e2d6b', marginBottom: 12 }}>📄 Relatórios enviados</div>
@@ -271,10 +274,7 @@ export default function CoordinatorDashboard({ profile }) {
                             const entry = entryMap[entryId]
                             return (
                               <div key={entryId} style={{ marginBottom: 14 }}>
-                                <div style={{
-                                  fontSize: '0.75rem', fontWeight: 700, color: '#1e2d6b',
-                                  background: '#e8ecf4', borderRadius: 4, padding: '4px 8px', marginBottom: 4
-                                }}>
+                                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#1e2d6b', background: '#e8ecf4', borderRadius: 4, padding: '4px 8px', marginBottom: 4 }}>
                                   📅 {formatDate(entry && entry.data)} — {entry && entry.local_empresa}
                                 </div>
                                 {files.map(f => <FileRow key={f.id} file={f} />)}
@@ -284,7 +284,6 @@ export default function CoordinatorDashboard({ profile }) {
                         </div>
                       )}
 
-                      {/* Painel comprovantes — agrupado por data/empresa */}
                       {showComprovantes && (
                         <div style={{ background: '#f4f6fb', borderRadius: 8, padding: '12px 14px' }}>
                           <div style={{ fontWeight: 700, fontSize: '0.82rem', color: '#1e2d6b', marginBottom: 12 }}>🧾 Comprovantes enviados</div>
@@ -292,10 +291,7 @@ export default function CoordinatorDashboard({ profile }) {
                             const entry = entryMap[entryId]
                             return (
                               <div key={entryId} style={{ marginBottom: 14 }}>
-                                <div style={{
-                                  fontSize: '0.75rem', fontWeight: 700, color: '#1e2d6b',
-                                  background: '#e8ecf4', borderRadius: 4, padding: '4px 8px', marginBottom: 4
-                                }}>
+                                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#1e2d6b', background: '#e8ecf4', borderRadius: 4, padding: '4px 8px', marginBottom: 4 }}>
                                   📅 {formatDate(entry && entry.data)} — {entry && entry.local_empresa}
                                 </div>
                                 {Object.entries(COMPROVANTE_LABELS).map(([tipo, { label, icon }]) => {
@@ -319,7 +315,6 @@ export default function CoordinatorDashboard({ profile }) {
                   )}
                 </div>
 
-                {/* Tabela de lançamentos */}
                 <div className="card">
                   {loading ? (
                     <div className="loading">Carregando lançamentos...</div>
@@ -339,6 +334,7 @@ export default function CoordinatorDashboard({ profile }) {
                             <th>Diárias</th>
                             <th>KM</th>
                             <th>Despesas</th>
+                            <th>Obs.</th>
                             <th>Relatório</th>
                             <th>Arquivos</th>
                           </tr>
@@ -353,6 +349,15 @@ export default function CoordinatorDashboard({ profile }) {
                               <td>{e.km_percorrido ? e.km_percorrido + ' km' : '—'}</td>
                               <td>{e.subtotal > 0 ? fmt(e.subtotal) : '—'}</td>
                               <td>
+                                {e.observacoes ? (
+                                  <button onClick={() => setObsModal(e.observacoes)} title="Ver observações" style={{ background: '#e8ecf4', border: 'none', borderRadius: 6, padding: '4px 8px', cursor: 'pointer', fontSize: '0.85rem' }}>
+                                    💬
+                                  </button>
+                                ) : (
+                                  <span style={{ color: '#d1d9e8' }}>—</span>
+                                )}
+                              </td>
+                              <td>
                                 <span className={'badge ' + (e.relatorio_feito ? 'badge-green' : 'badge-orange')}>
                                   {e.relatorio_feito ? '✓' : '⏳'}
                                 </span>
@@ -365,16 +370,10 @@ export default function CoordinatorDashboard({ profile }) {
                                     {(e.entry_files || []).map(f => (
                                       <button key={f.id} onClick={() => downloadFile(f)}
                                         disabled={downloadingId === f.id}
-                                        style={{
-                                          display: 'flex', alignItems: 'center', gap: 4,
-                                          background: 'none', border: '1px solid #d1d9e8',
-                                          borderRadius: 4, padding: '2px 6px', cursor: 'pointer',
-                                          fontSize: '0.73rem', color: '#1e2d6b', textAlign: 'left', maxWidth: 200
-                                        }} title={f.nome_arquivo}>
+                                        style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: '1px solid #d1d9e8', borderRadius: 4, padding: '2px 6px', cursor: 'pointer', fontSize: '0.73rem', color: '#1e2d6b', textAlign: 'left', maxWidth: 200 }}
+                                        title={f.nome_arquivo}>
                                         <span>{f.tipo === 'relatorio' ? '📄' : '🧾'}</span>
-                                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
-                                          {f.nome_arquivo}
-                                        </span>
+                                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{f.nome_arquivo}</span>
                                         <span>{downloadingId === f.id ? '...' : '⬇'}</span>
                                       </button>
                                     ))}
