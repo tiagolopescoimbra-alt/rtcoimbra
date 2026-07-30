@@ -7,7 +7,7 @@ const MONTHS = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','A
 
 function formatDate(d) {
   const [y,m,day] = d.split('-')
-  return day + '/' + m + '/' + y
+  return `${day}/${m}/${y}`
 }
 
 function formatCurrency(v) {
@@ -23,7 +23,7 @@ export default function EmployeeDashboard({ profile }) {
   const [entries, setEntries] = useState([])
   const [loading, setLoading] = useState(true)
 
-  const todayStr = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0')
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`
 
   useEffect(() => {
     if (profile) loadEntries()
@@ -31,8 +31,8 @@ export default function EmployeeDashboard({ profile }) {
 
   async function loadEntries() {
     setLoading(true)
-    const startDate = viewYear + '-' + String(viewMonth + 1).padStart(2, '0') + '-01'
-    const endDate = viewYear + '-' + String(viewMonth + 1).padStart(2, '0') + '-31'
+    const startDate = `${viewYear}-${String(viewMonth+1).padStart(2,'0')}-01`
+    const endDate = `${viewYear}-${String(viewMonth+1).padStart(2,'0')}-31`
     const { data } = await supabase
       .from('daily_entries')
       .select('*, entry_files(id, tipo, nome_arquivo)')
@@ -50,26 +50,24 @@ export default function EmployeeDashboard({ profile }) {
     entriesByDate[e.data].push(e)
   })
 
-  const totals = entries.reduce((acc, e) => {
-    const diarias = (e.diaria_normal || 0) + (e.diaria_sabado || 0) + (e.diaria_domingo || 0)
-    return {
-      diarias: acc.diarias + diarias,
-      km: acc.km + (e.km_percorrido || 0),
-      despesas: acc.despesas + (e.subtotal || 0),
-      total: acc.total + diarias + (e.subtotal || 0)
-    }
-  }, { diarias: 0, km: 0, despesas: 0, total: 0 })
+  const totals = entries.reduce((acc, e) => ({
+    diarias: acc.diarias + (e.diaria_normal || 0) + (e.diaria_sabado || 0) + (e.diaria_domingo || 0),
+    km: acc.km + (e.km_percorrido || 0),
+    despesas: acc.despesas + (e.subtotal || 0),
+  }), { diarias: 0, km: 0, despesas: 0 })
+
+  const totalGeral = totals.diarias + totals.despesas
 
   function toDateStr(d) {
-    return viewYear + '-' + String(viewMonth + 1).padStart(2, '0') + '-' + String(d).padStart(2, '0')
+    return `${viewYear}-${String(viewMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`
   }
 
   function renderCalendar() {
     const firstDay = new Date(viewYear, viewMonth, 1).getDay()
-    const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate()
+    const daysInMonth = new Date(viewYear, viewMonth+1, 0).getDate()
     const cells = []
 
-    for (let i = 0; i < firstDay; i++) cells.push(<div key={'e-' + i} />)
+    for (let i = 0; i < firstDay; i++) cells.push(<div key={`e-${i}`} />)
 
     for (let d = 1; d <= daysInMonth; d++) {
       const dateStr = toDateStr(d)
@@ -84,28 +82,20 @@ export default function EmployeeDashboard({ profile }) {
           key={d}
           onClick={() => setSelectedDate(isSelected ? null : dateStr)}
           style={{
-            aspectRatio: '1',
-            borderRadius: 8,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'flex-start',
-            padding: '6px 4px',
-            cursor: 'pointer',
+            aspectRatio: '1', borderRadius: 8,
+            display: 'flex', flexDirection: 'column',
+            alignItems: 'center', justifyContent: 'flex-start',
+            padding: '6px 4px', cursor: 'pointer',
             background: isSelected ? '#e8ecf4' : 'transparent',
             border: isToday ? '2px solid #1e2d6b' : '2px solid transparent',
-            transition: 'background 0.1s',
-            minHeight: 52,
+            transition: 'background 0.1s', minHeight: 52,
           }}
         >
           <span style={{
-            fontSize: '0.82rem',
-            fontWeight: isToday ? 700 : 500,
+            fontSize: '0.82rem', fontWeight: isToday ? 700 : 500,
             color: isToday ? '#1e2d6b' : '#1a202c',
-            width: 24, height: 24,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            borderRadius: '50%',
-            background: isToday ? '#e8ecf4' : 'transparent'
+            width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            borderRadius: '50%', background: isToday ? '#e8ecf4' : 'transparent'
           }}>{d}</span>
           {dayEntries.length > 0 && (
             <div style={{ display: 'flex', gap: 2, marginTop: 3, flexWrap: 'wrap', justifyContent: 'center' }}>
@@ -132,17 +122,16 @@ export default function EmployeeDashboard({ profile }) {
             Olá, {profile && profile.nome ? profile.nome.split(' ')[0] : ''}!
           </h1>
           <p style={{ color: '#8a9bb5', fontSize: '0.85rem' }}>
-            Inspetor {profile && profile.sigla} · N&#186; {profile && profile.numero_inspetor}
+            Inspetor {profile && profile.sigla} · Nº {profile && profile.numero_inspetor}
           </p>
         </div>
 
-        {/* Totais */}
         <div className="totals-bar" style={{ marginBottom: 20 }}>
           {[
             { label: 'Diárias no mês', value: formatCurrency(totals.diarias) },
-            { label: 'KM no mês', value: totals.km + ' km' },
+            { label: 'KM no mês', value: `${totals.km} km` },
             { label: 'Despesas', value: formatCurrency(totals.despesas) },
-            { label: 'Total Geral', value: formatCurrency(totals.total) },
+            { label: 'Total Geral', value: formatCurrency(totalGeral) },
           ].map(t => (
             <div key={t.label} className="total-item">
               <div className="label">{t.label}</div>
@@ -153,7 +142,6 @@ export default function EmployeeDashboard({ profile }) {
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 20, alignItems: 'start' }}>
 
-          {/* Calendário */}
           <div className="card">
             <div className="card-header">
               <button className="btn btn-secondary btn-sm" onClick={() => {
@@ -189,9 +177,7 @@ export default function EmployeeDashboard({ profile }) {
             </div>
           </div>
 
-          {/* Painel lateral */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-
             <button className="btn btn-primary btn-full" onClick={() => navigate('/funcionario/novo-lancamento')} style={{ padding: '12px' }}>
               + Novo Lançamento
             </button>
@@ -200,7 +186,7 @@ export default function EmployeeDashboard({ profile }) {
               <div className="card-header">
                 <h2>{selectedDate ? formatDate(selectedDate) : 'Selecione um dia'}</h2>
                 {selectedDate && selectedEntries.length === 0 && (
-                  <button className="btn btn-secondary btn-sm" onClick={() => navigate('/funcionario/novo-lancamento?data=' + selectedDate)}>
+                  <button className="btn btn-secondary btn-sm" onClick={() => navigate(`/funcionario/novo-lancamento?data=${selectedDate}`)}>
                     + Adicionar
                   </button>
                 )}
@@ -219,24 +205,24 @@ export default function EmployeeDashboard({ profile }) {
                 ) : (
                   <div>
                     {selectedEntries.map(e => (
-                      <div key={e.id} onClick={() => navigate('/funcionario/lancamento/' + e.id)} style={{
-                        padding: '12px 16px',
-                        borderBottom: '1px solid #e8ecf4',
-                        cursor: 'pointer',
-                        transition: 'background 0.1s'
+                      <div key={e.id} onClick={() => navigate(`/funcionario/lancamento/${e.id}`)} style={{
+                        padding: '12px 16px', borderBottom: '1px solid #e8ecf4',
+                        cursor: 'pointer', transition: 'background 0.1s'
                       }}
                         onMouseEnter={ev => ev.currentTarget.style.background = '#fafbff'}
                         onMouseLeave={ev => ev.currentTarget.style.background = 'white'}
                       >
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
                           <span style={{ fontWeight: 700, fontSize: '0.88rem', color: '#1e2d6b' }}>{e.local_empresa || '—'}</span>
-                          <span className={'badge ' + (e.relatorio_feito ? 'badge-green' : 'badge-orange')}>
+                          <span className={`badge ${e.relatorio_feito ? 'badge-green' : 'badge-orange'}`}>
                             {e.relatorio_feito ? '✓ Relatório' : '⏳ Pendente'}
                           </span>
                         </div>
                         <div style={{ fontSize: '0.78rem', color: '#8a9bb5' }}>{e.servico_executado}</div>
                         <div style={{ display: 'flex', gap: 12, marginTop: 4, fontSize: '0.78rem', color: '#4a5568' }}>
-                          <span>💰 {formatCurrency((e.diaria_normal || 0) + (e.diaria_sabado || 0) + (e.diaria_domingo || 0))}</span>
+                          {((e.diaria_normal||0)+(e.diaria_sabado||0)+(e.diaria_domingo||0)) > 0 && (
+                            <span>💰 {formatCurrency((e.diaria_normal||0)+(e.diaria_sabado||0)+(e.diaria_domingo||0))}</span>
+                          )}
                           {e.km_percorrido > 0 && <span>🚗 {e.km_percorrido} km</span>}
                           {e.subtotal > 0 && <span>🧾 {formatCurrency(e.subtotal)}</span>}
                         </div>
@@ -248,7 +234,7 @@ export default function EmployeeDashboard({ profile }) {
                       </div>
                     ))}
                     <div style={{ padding: '10px 16px' }}>
-                      <button className="btn btn-secondary btn-sm btn-full" onClick={() => navigate('/funcionario/novo-lancamento?data=' + selectedDate)}>
+                      <button className="btn btn-secondary btn-sm btn-full" onClick={() => navigate(`/funcionario/novo-lancamento?data=${selectedDate}`)}>
                         + Adicionar outro
                       </button>
                     </div>
@@ -259,7 +245,6 @@ export default function EmployeeDashboard({ profile }) {
           </div>
         </div>
 
-        {/* Tabela do mês */}
         <div className="card" style={{ marginTop: 20 }}>
           <div className="card-header">
             <h2>Lançamentos de {MONTHS[viewMonth]}</h2>
@@ -290,16 +275,16 @@ export default function EmployeeDashboard({ profile }) {
                 </thead>
                 <tbody>
                   {entries.map(e => (
-                    <tr key={e.id} style={{ cursor: 'pointer' }} onClick={() => navigate('/funcionario/lancamento/' + e.id)}>
+                    <tr key={e.id} style={{ cursor: 'pointer' }} onClick={() => navigate(`/funcionario/lancamento/${e.id}`)}>
                       <td style={{ whiteSpace: 'nowrap' }}>{formatDate(e.data)}</td>
                       <td style={{ fontSize: '0.8rem', color: '#4a5568' }}>{e.origem} → {e.destino}</td>
                       <td style={{ fontWeight: 600 }}>{e.local_empresa}</td>
                       <td style={{ color: '#4a5568' }}>{e.servico_executado}</td>
-                      <td>{formatCurrency((e.diaria_normal || 0) + (e.diaria_sabado || 0) + (e.diaria_domingo || 0))}</td>
-                      <td>{e.km_percorrido ? e.km_percorrido + ' km' : '—'}</td>
+                      <td>{formatCurrency((e.diaria_normal||0)+(e.diaria_sabado||0)+(e.diaria_domingo||0))}</td>
+                      <td>{e.km_percorrido ? `${e.km_percorrido} km` : '—'}</td>
                       <td>{e.subtotal > 0 ? formatCurrency(e.subtotal) : '—'}</td>
                       <td>
-                        <span className={'badge ' + (e.relatorio_feito ? 'badge-green' : 'badge-orange')}>
+                        <span className={`badge ${e.relatorio_feito ? 'badge-green' : 'badge-orange'}`}>
                           {e.relatorio_feito ? '✓ Feito' : '⏳ Pendente'}
                         </span>
                       </td>
