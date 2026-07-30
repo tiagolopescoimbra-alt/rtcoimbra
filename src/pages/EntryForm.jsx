@@ -40,7 +40,6 @@ export default function EntryForm({ profile }) {
   const [error, setError] = useState('')
   const [draftRestored, setDraftRestored] = useState(false)
 
-  // Carrega entrada existente no modo edição
   useEffect(() => {
     if (isEditing) {
       supabase.from('daily_entries').select('*').eq('id', editId).single()
@@ -51,14 +50,12 @@ export default function EntryForm({ profile }) {
     }
   }, [editId])
 
-  // Restaura rascunho apenas no modo criação e apenas se a data bate
   useEffect(() => {
     if (isEditing) return
     try {
       const saved = sessionStorage.getItem(DRAFT_KEY)
       if (saved) {
         const parsed = JSON.parse(saved)
-        // Só restaura se a data do rascunho bate com a data atual
         if (!dataParam || parsed.data === dataParam) {
           setForm(f => ({ ...f, ...parsed, data: dataParam || parsed.data || '' }))
           setDraftRestored(true)
@@ -69,13 +66,11 @@ export default function EntryForm({ profile }) {
     } catch {}
   }, [])
 
-  // Salva rascunho no modo criação
   useEffect(() => {
     if (isEditing) return
     try { sessionStorage.setItem(DRAFT_KEY, JSON.stringify(form)) } catch {}
   }, [form])
 
-  // Recalcula km_total e subtotal
   useEffect(() => {
     const kmTotal = parseFloat(form.km_percorrido || 0) * parseFloat(form.km_valor_unitario || 1)
     const subtotal = kmTotal +
@@ -119,7 +114,6 @@ export default function EntryForm({ profile }) {
     let entryId
 
     if (isEditing) {
-      // Atualiza lançamento existente
       const { error: updateError } = await supabase
         .from('daily_entries')
         .update({
@@ -136,7 +130,6 @@ export default function EntryForm({ profile }) {
       if (updateError) { setError(updateError.message); setLoading(false); return }
       entryId = editId
     } else {
-      // Cria novo lançamento
       const { data: entry, error: entryError } = await supabase
         .from('daily_entries')
         .insert({ ...form, user_id: profile.id })
@@ -145,7 +138,6 @@ export default function EntryForm({ profile }) {
       entryId = entry.id
     }
 
-    // Upload novos relatórios
     for (const file of relatorios) {
       const ext = file.name.split('.').pop()
       const path = profile.id + '/' + entryId + '/relatorio_' + Date.now() + '.' + ext
@@ -159,7 +151,6 @@ export default function EntryForm({ profile }) {
       }
     }
 
-    // Upload novos comprovantes
     for (const { tipo } of COMPROVANTES_CONFIG) {
       const file = comprovantes[tipo]
       if (!file) continue
@@ -209,7 +200,6 @@ export default function EntryForm({ profile }) {
 
         <form onSubmit={handleSubmit}>
 
-          {/* Dados básicos */}
           <div className="card" style={{ marginBottom: 16 }}>
             <div className="card-header"><h2>Dados do Dia</h2></div>
             <div className="card-body">
@@ -250,7 +240,6 @@ export default function EntryForm({ profile }) {
             </div>
           </div>
 
-          {/* Diárias */}
           <div className="card" style={{ marginBottom: 16 }}>
             <div className="card-header">
               <h2>Diárias</h2>
@@ -274,7 +263,6 @@ export default function EntryForm({ profile }) {
             </div>
           </div>
 
-          {/* Deslocamento */}
           <div className="card" style={{ marginBottom: 16 }}>
             <div className="card-header">
               <h2>Deslocamento</h2>
@@ -298,7 +286,6 @@ export default function EntryForm({ profile }) {
             </div>
           </div>
 
-          {/* Despesas */}
           <div className="card" style={{ marginBottom: 16 }}>
             <div className="card-header">
               <h2>Despesas</h2>
@@ -330,7 +317,6 @@ export default function EntryForm({ profile }) {
             </div>
           </div>
 
-          {/* Arquivos — apenas no modo criação ou como adição no modo edição */}
           <div className="card" style={{ marginBottom: 16 }}>
             <div className="card-header">
               <h2>Arquivos</h2>
@@ -339,7 +325,7 @@ export default function EntryForm({ profile }) {
             <div className="card-body">
               <div style={{ marginBottom: 20 }}>
                 <div style={{ fontWeight: 600, color: '#4a5568', fontSize: '0.78rem', textTransform: 'uppercase', marginBottom: 8 }}>
-                  Relatórios Diários (PDF ou DOCX)
+                  Relatórios Diários (PDF, DOCX ou ZIP)
                 </div>
                 {relatorios.map((f, i) => (
                   <div key={i} className="file-item" style={{ marginBottom: 6 }}>
@@ -349,8 +335,8 @@ export default function EntryForm({ profile }) {
                   </div>
                 ))}
                 <label className="file-upload-area" style={{ display: 'block', cursor: 'pointer' }}>
-                  <input type="file" accept=".pdf,.docx,.doc" multiple onChange={addRelatorios} style={{ display: 'none' }} />
-                  <div>📄 {relatorios.length > 0 ? '+ Adicionar outro relatório' : 'Clique para anexar relatório(s)'}<br /><small>PDF ou DOCX — pode adicionar vários</small></div>
+                  <input type="file" accept=".pdf,.docx,.doc,.zip" multiple onChange={addRelatorios} style={{ display: 'none' }} />
+                  <div>📄 {relatorios.length > 0 ? '+ Adicionar outro relatório' : 'Clique para anexar relatório(s)'}<br /><small>PDF, DOCX ou ZIP — pode adicionar vários</small></div>
                 </label>
               </div>
 
@@ -378,7 +364,6 @@ export default function EntryForm({ profile }) {
             </div>
           </div>
 
-          {/* Observações */}
           <div className="card" style={{ marginBottom: 20 }}>
             <div className="card-body">
               <div className="form-group">
@@ -392,7 +377,6 @@ export default function EntryForm({ profile }) {
             </div>
           </div>
 
-          {/* Total + Submit */}
           <div style={{ background: 'white', borderRadius: 10, padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 1px 4px rgba(30,45,107,0.1)' }}>
             <div>
               <div style={{ fontSize: '0.8rem', color: '#8a9bb5' }}>Total do dia</div>
